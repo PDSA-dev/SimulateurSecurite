@@ -137,7 +137,7 @@
   <div id="mission"></div>
   <div id="carry">🧯 Extincteur en main</div>
   <canvas id="map" width="180" height="170"></canvas>
-  <div id="help"><kbd>Z Q S D</kbd> / flèches : se déplacer &nbsp;·&nbsp; <kbd>Souris</kbd> : regarder &nbsp;·&nbsp; <kbd>E</kbd> : interagir &nbsp;·&nbsp; <kbd>Échap</kbd> : souris &nbsp;·&nbsp; <kbd>I</kbd> : repères x/z (debug)</div>
+  <div id="help"><kbd>Z Q S D</kbd> / flèches : se déplacer &nbsp;·&nbsp; <kbd>Souris</kbd> : regarder &nbsp;·&nbsp; <kbd>E</kbd> : interagir &nbsp;·&nbsp; <kbd>Échap</kbd> : quitter le plein écran</div>
 </div>
 
 <div class="screen" id="intro">
@@ -441,21 +441,23 @@ const DOORS=[
   {wall:'east', at:-14,type:'secours'}   // sortie de secours, mur est
 ];
 const COLLIDERS=[]; // rempli au build
-let DEBUG_ON=false; const DEBUG_LABELS=[]; // étiquettes x/z (touche I) pour repérer précisément un élément sur une capture
 const ENTRANCE_EXT={x:8,z:20.4};                            // extincteur dans le couloir, près de l'accès
 const EXTINGUISHERS=[ENTRANCE_EXT]; // un seul extincteur
 const ELEC_CUTOFF={x:13.6,z:21.1};                          // tableau de coupure élec. côté COULOIR (de l'autre côté du mur z=21)
 const ASSEMBLY={x:25.5,z:31.5};                             // point de rassemblement (éditeur) — sud-est du parking
-const WORLD={minX:-26,maxX:40,minZ:-28,maxZ:34};            // bornes de déplacement (intérieur + extérieur + couloir WC/vestiaire sud)
+const WORLD={minX:-26,maxX:40,minZ:-28,maxZ:60};            // bornes de déplacement (intérieur + extérieur + aile sud/jardin + parking)
 
 /* ===================== État ===================== */
 const state={score:0,safety:100,resolved:0};
 const $=s=>document.querySelector(s);
 
-let renderer,scene,camera,controls,clock;
+let renderer,scene,camera,clock;
 const hotspots=[],flames=[];
+const fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
+// déplacement au clavier (ZQSD/flèches) ; la souris tourne la tête sans pointer lock
 const move={f:false,b:false,l:false,r:false};
-const vel=new THREE.Vector3(),dirv=new THREE.Vector3(),fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
+const vel=new THREE.Vector3(),dirv=new THREE.Vector3();
+let mouseNX=0,mouseNY=0;
 let activeHotspot=null,started=false,collapsedRef=null;
 let clockLedTex=null,lastClockDraw=-999; // horloge numérique (bandeau LED)
 // contrôle d'accès (badge en 3D) : porte battante manuelle, lecteur à droite
@@ -478,13 +480,6 @@ function emojiSprite(emoji,size=1.7){
   const t=new THREE.CanvasTexture(c);t.anisotropy=4;
   const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:true,transparent:true})); // occulté par les murs (pas de voir-à-travers)
   s.scale.set(size,size,1);return s;
-}
-function textSprite(txt,bg,fg="#fff"){
-  const c=document.createElement('canvas');c.width=256;c.height=96;const g=c.getContext('2d');
-  g.fillStyle=bg;g.strokeStyle="#fff";g.lineWidth=8;g.beginPath();g.roundRect(6,6,244,84,14);g.fill();g.stroke();
-  g.fillStyle=fg;g.font='bold 46px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(txt,128,50);
-  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true}));
-  s.scale.set(3,1.1,1);return s;
 }
 // plaque PLATE (sur un mur), orientée par ry ; w,h en mètres
 function signPlane(txt,x,y,z,ry,w,bg,fg){
@@ -761,6 +756,7 @@ function buildWorld(){
   scene.fog=new THREE.Fog(0xdfe7f0,60,170);
 
   camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.1,300);
+  camera.rotation.order='YXZ'; // yaw puis pitch, sans roll (regard souris sans pointer lock)
   camera.position.set(27,2.6,22); // DEHORS, devant la porte d'accès (est) — on entre par badgeage
   camera.rotation.set(0,Math.PI/2,0); // regarde vers -x : face à la porte
 
@@ -870,7 +866,6 @@ function buildWorld(){
   buildCollapsedDae(-15.66,-11.55);
   buildStarNPC();               // agent (barbe + casquette) devant son écran, près du scénario phishing
 
-  controls=new PointerLockControls(camera,renderer.domElement);
   clock=new THREE.Clock();
 }
 
@@ -1429,13 +1424,12 @@ function buildOfficeDoors(){
     const aboveH=ROOM.h-dh;
     if(aboveH>0.05) g.add(mk(new THREE.BoxGeometry(0.06,aboveH,len),aboveGlass,0,dh+aboveH/2,0));
   };
-  const doorLabel=(x,z)=>{const s=textSprite(`x=${x} z=${z}`,"#7a3aa0");s.position.set(x,ROOM.h-0.4,z);s.scale.set(1.6,0.6,1);s.visible=DEBUG_ON;DEBUG_LABELS.push(s);scene.add(s);};
-  door(6.97,-17.28,2.4,'z');   doorLabel(6.97,-17.28);
-  door(13.51,0.62,2.4,'z');    doorLabel(13.51,0.62);
-  door(13.51,12.61,2.4,'z');   doorLabel(13.51,12.61);
-  door(13.51,19.82,2.4,'z');   doorLabel(13.51,19.82);
-  door(-13.76,12.58,2.4,'x');  doorLabel(-13.76,12.58);
-  door(-1.76,12.59,2.4,'x');   doorLabel(-1.76,12.59);
+  door(6.97,-17.28,2.4,'z');
+  door(13.51,0.62,2.4,'z');
+  door(13.51,12.61,2.4,'z');
+  door(13.51,19.82,2.4,'z');
+  door(-13.76,12.58,2.4,'x');
+  door(-1.76,12.59,2.4,'x');
   // MURS au-dessus des portes open space (z=21) et secours (mur est) — comblent le haut des baies
   const fillMat=new THREE.MeshStandardMaterial({color:0xe2d8c6,roughness:1,side:THREE.DoubleSide});
   const h1=new THREE.Mesh(new THREE.PlaneGeometry(2.6,ROOM.h-4.0),fillMat);h1.position.set(1.3,(4.0+ROOM.h)/2,SALLE_SOUTH-0.05);scene.add(h1); // au-dessus open space
@@ -1623,44 +1617,103 @@ function buildCorridor(){
   c.position.set(0,0.13,ROOM.d/2-0.05);c.rotation.y=Math.PI;scene.add(c);
 }
 function buildServiceRoom(){
-  // COULOIR de service EN FACE de la porte open space (sud, z>24)
-  // droite (-x) : WC femmes + vestiaire/casiers · gauche (+x) : WC handicapé + WC hommes
-  // au fond : à gauche chaufferie/gaz, en face local informatique
-  const z0=ROOM.d/2, z1=ROOM.d/2+9, xR=-1.2, xL=3.8, H=ROOM.h; // xR=mur droit(-x), xL=mur gauche(+x)
-  const wallMat=new THREE.MeshStandardMaterial({color:0xe6dcc8,roughness:1,side:THREE.DoubleSide});
-  const doorMat=new THREE.MeshStandardMaterial({color:0xe9e6df,roughness:.6});
-  const W=xL-xR;
-  const floor=new THREE.Mesh(new THREE.PlaneGeometry(W,z1-z0),new THREE.MeshStandardMaterial({map:repeatTex(tileTex(),W/1.2,(z1-z0)/1.2),color:0xe2dccb,roughness:.7}));
-  floor.rotation.x=-Math.PI/2;floor.position.set((xR+xL)/2,0.012,(z0+z1)/2);scene.add(floor);
-  const ceil=new THREE.Mesh(new THREE.PlaneGeometry(W,z1-z0),new THREE.MeshStandardMaterial({color:0xeae3d4}));
-  ceil.rotation.x=Math.PI/2;ceil.position.set((xR+xL)/2,H,(z0+z1)/2);scene.add(ceil);
-  const segZ2=(x,za,zb)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(zb-za,H),wallMat);m.position.set(x,H/2,(za+zb)/2);m.rotation.y=Math.PI/2;scene.add(m);COLLIDERS.push({minX:x-0.5,maxX:x+0.5,minZ:za,maxZ:zb,type:'wall'});};
-  const segX2=(z,xa,xb)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(xb-xa,H),wallMat);m.position.set((xa+xb)/2,H/2,z);scene.add(m);COLLIDERS.push({minX:xa,maxX:xb,minZ:z-0.5,maxZ:z+0.5,type:'wall'});};
-  segZ2(xR,z0,z1); segZ2(xL,z0,z1); segX2(z1,xR,xL);
-  // éclairage
-  [z0+2.5,z0+6.5].forEach(z=>{const pl=new THREE.PointLight(0xfff3da,0.5,16);pl.position.set((xR+xL)/2,H-0.6,z);scene.add(pl);
-    const lamp=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1),new THREE.MeshBasicMaterial({color:0xfffaf0}));lamp.rotation.x=Math.PI/2;lamp.position.set((xR+xL)/2,H-0.04,z);scene.add(lamp);});
-  // portes latérales (panneau clair + poignée + plaque) ; dir=+1 mur droit(-x) face +x, dir=-1 mur gauche(+x) face -x
-  const sideDoor=(wallX,dir,z,label)=>{ // dir=+1 mur droit(-x) face +x, dir=-1 mur gauche(+x) face -x
-    const d=new THREE.Mesh(new THREE.BoxGeometry(0.08,2.15,1.0),doorMat);d.position.set(wallX+dir*0.06,1.08,z);scene.add(d);
-    const h=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.16,8),M.metal);h.position.set(wallX+dir*0.14,1.05,z+0.36);scene.add(h);
-    signPlane(label,wallX+dir*0.07,2.45,z,dir>0?Math.PI/2:-Math.PI/2,1.05,"#1c5bbf"); // plaque à plat sur le mur
+  // AILE SUD (éditeur) : WC Femmes, WC Homme, WC PMR, Local informatique, Chaufferie/Gaz,
+  // Salle de repos, Salle de formation, Jardin. Reconstruite à partir du plan détaillé (murs/portes/sanitaires).
+  const H=ROOM.h;
+  const wallMat=new THREE.MeshStandardMaterial({map:repeatTex(wallTex(),4,2),color:0xe2d8c6,roughness:1,side:THREE.DoubleSide});
+  const annexWall=(x,z,len,axis,gaps)=>{
+    const half=1.45; let cur=-len/2; const segs=[];
+    (gaps||[]).slice().sort((a,b)=>a-b).forEach(g=>{ const g0=g-half,g1=g+half; if(g0>cur)segs.push([cur,g0]); cur=Math.max(cur,g1); });
+    segs.push([cur,len/2]);
+    segs.forEach(([t0,t1])=>{
+      const plen=t1-t0; if(plen<0.05)return; const pc=(t0+t1)/2;
+      const px=axis==='x'?x+pc:x, pz=axis==='x'?z:z+pc;
+      const m=new THREE.Mesh(new THREE.PlaneGeometry(plen,H),wallMat);m.position.set(px,H/2,pz);
+      if(axis==='z')m.rotation.y=Math.PI/2; m.receiveShadow=true;scene.add(m);
+      if(axis==='x')COLLIDERS.push({minX:px-plen/2,maxX:px+plen/2,minZ:z-0.12,maxZ:z+0.12,type:'wall'});
+      else COLLIDERS.push({minX:x-0.12,maxX:x+0.12,minZ:pz-plen/2,maxZ:pz+plen/2,type:'wall'});
+    });
   };
-  sideDoor(xR,+1,z0+2.4,"WC femmes"); sideDoor(xR,+1,z0+5.6,"Vestiaire"); // droite
-  sideDoor(xL,-1,z0+2.4,"WC handicapé"); sideDoor(xL,-1,z0+5.6,"WC hommes"); // gauche
-  // portes du fond : local informatique (en face) + chaufferie/gaz (à gauche=+x)
-  const backDoor=(x,label,color)=>{
-    const d=new THREE.Mesh(new THREE.BoxGeometry(1.0,2.15,0.08),doorMat);d.position.set(x,1.08,z1-0.06);scene.add(d);
-    const h=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.16,8),M.metal);h.rotation.z=Math.PI/2;h.position.set(x+0.36,1.05,z1-0.14);scene.add(h);
-    signPlane(label,x,2.45,z1-0.07,Math.PI,1.3,color); // plaque à plat sur le mur du fond
+  const annexDoor=(x,z,len,axis)=>{
+    const woodDoor=new THREE.MeshStandardMaterial({color:0xddb98a,roughness:.55});
+    const dark=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
+    const g=new THREE.Group();g.position.set(x,0,z);if(axis==='x')g.rotation.y=Math.PI/2;scene.add(g);
+    const dh=H-1.0,lw=len-0.12;
+    const leaf=new THREE.Mesh(new THREE.BoxGeometry(0.06,dh,lw),woodDoor);leaf.position.set(0,dh/2,0);g.add(leaf);
+    [-len/2,len/2].forEach(p=>{const m=new THREE.Mesh(new THREE.BoxGeometry(0.16,dh+0.14,0.12),dark);m.position.set(0,dh/2,p);g.add(m);});
+    const h=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.5,8),M.metal);h.position.set(0.07,1.15,lw/2-0.18);g.add(h);
+    // comble le mur au-dessus de la porte jusqu'au plafond (sinon vide entre le haut de porte et le plafond)
+    const aboveH=H-dh;
+    if(aboveH>0.05){const fill=new THREE.Mesh(new THREE.BoxGeometry(0.1,aboveH,len),wallMat);fill.position.set(0,dh+aboveH/2,0);g.add(fill);}
   };
-  backDoor(0.5,"Local informatique","#1c5bbf"); backDoor(2.9,"Chaufferie / gaz","#cd0037");
-  // casiers/vestiaire visibles contre le mur droit
-  const lockers=new THREE.Mesh(new THREE.BoxGeometry(0.5,1.9,2.6),new THREE.MeshStandardMaterial({map:lockerTex(),roughness:.6}));
-  lockers.position.set(xR+0.3,0.95,z0+7.4);scene.add(lockers);
-  COLLIDERS.push({minX:xR,maxX:xR+0.6,minZ:z0+6.1,maxZ:z0+8.7,type:'locker'});
-  // extincteurs
-  extinguisher(xL-0.5,z0+1.0); extinguisher(xR+0.5,z1-1.0);
+  const annexDoubleDoorX=(cx,cz,len)=>{
+    const glass=new THREE.MeshStandardMaterial({color:0xbfe3ff,transparent:true,opacity:.3,roughness:.04,metalness:.2,side:THREE.DoubleSide});
+    const frame=new THREE.MeshStandardMaterial({color:0x47506a,metalness:.4,roughness:.5});
+    const leafW=len/2;
+    [[cx-leafW/2,+1],[cx+leafW/2,-1]].forEach(([hx,dir])=>{
+      const pivot=new THREE.Group();pivot.position.set(hx,2.1,cz);scene.add(pivot);
+      const g=new THREE.Mesh(new THREE.PlaneGeometry(leafW,4.2),glass);g.position.set(dir*leafW/2,0,0);pivot.add(g);
+    });
+    [cx-leafW,cx+leafW].forEach(fx=>{const fr=new THREE.Mesh(new THREE.BoxGeometry(0.12,4.2,0.12),frame);fr.position.set(fx,2.1,cz);scene.add(fr);});
+    const lint=new THREE.Mesh(new THREE.BoxGeometry(len+0.2,0.16,0.14),frame);lint.position.set(cx,4.25,cz);scene.add(lint);
+  };
+  const lavaboFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const white=new THREE.MeshStandardMaterial({color:0xf5f5f2,roughness:.3});
+    const basin=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.22,0.62),white);basin.position.set(0,0.85,0.08);g.add(basin);
+    const ped=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.85,0.24),new THREE.MeshStandardMaterial({color:0xe8e8e4,roughness:.4}));ped.position.set(0,0.42,0.08);g.add(ped);
+    const tap=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.26,8),M.metal);tap.position.set(0,1.05,-0.12);g.add(tap);
+    COLLIDERS.push({minX:x-0.45,maxX:x+0.45,minZ:z-0.38,maxZ:z+0.38,type:'cabinet'});
+  };
+  const wcFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const white=new THREE.MeshStandardMaterial({color:0xf5f5f2,roughness:.3});
+    const tank=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.5,0.22),white);tank.position.set(0,0.8,-0.26);g.add(tank);
+    const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.22,0.5,16),white);bowl.rotation.x=Math.PI/2;bowl.position.set(0,0.45,0.05);g.add(bowl);
+    const seat=new THREE.Mesh(new THREE.RingGeometry(0.19,0.27,20),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.4,side:THREE.DoubleSide}));seat.rotation.x=-Math.PI/2;seat.position.set(0,0.68,0.05);g.add(seat);
+    COLLIDERS.push({minX:x-0.5,maxX:x+0.5,minZ:z-0.55,maxZ:z+0.5,type:'cabinet'});
+  };
+  const miroirFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const frame=new THREE.Mesh(new THREE.BoxGeometry(0.85,1.05,0.03),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.5}));frame.position.set(0,1.55,0.02);g.add(frame);
+    const mir=new THREE.Mesh(new THREE.PlaneGeometry(0.78,0.98),new THREE.MeshStandardMaterial({color:0xcfe0e8,roughness:.05,metalness:.6}));mir.position.set(0,1.55,0.036);g.add(mir);
+  };
+  // sol/plafond de l'aile (bâtiment couvert, z 24→45) + pelouse du jardin (z 45→55, extérieur)
+  const annexCX=(-21+20.05)/2, annexW=20.05-(-21), annexCZ=(24+45)/2, annexD=45-24;
+  const annexFloor=new THREE.Mesh(new THREE.PlaneGeometry(annexW,annexD),new THREE.MeshStandardMaterial({map:repeatTex(tileTex(),annexW/1.4,annexD/1.4),color:0xa99e84,roughness:.7,metalness:.03}));
+  annexFloor.rotation.x=-Math.PI/2;annexFloor.position.set(annexCX,0.01,annexCZ);annexFloor.receiveShadow=true;scene.add(annexFloor);
+  const annexCeil=new THREE.Mesh(new THREE.PlaneGeometry(annexW,annexD),new THREE.MeshStandardMaterial({map:repeatTex(ceilingTex(),annexW/2,annexD/2),color:0xf4f6f9,roughness:.9}));
+  annexCeil.rotation.x=Math.PI/2;annexCeil.position.set(annexCX,H,annexCZ);scene.add(annexCeil);
+  const grass=new THREE.Mesh(new THREE.PlaneGeometry(annexW,10.2),new THREE.MeshStandardMaterial({color:0x5a8a4a,roughness:1}));
+  grass.rotation.x=-Math.PI/2;grass.position.set(annexCX,0.005,50);grass.receiveShadow=true;scene.add(grass);
+  [[-10,48],[10,52],[-15,53]].forEach(p=>tree(annexCX+p[0],p[1]));
+  // éclairage des pièces
+  [[-6.72,30.8],[7.2,29.4],[7.67,39.9],[15.4,39.9],[17.6,29.4],[1.1,41.2],[1.68,30.7]].forEach(([lx,lz])=>{
+    const pl=new THREE.PointLight(0xfff3da,0.45,14);pl.position.set(lx,H-0.6,lz);scene.add(pl);
+  });
+  // cloisons + mur extérieur sud (avec 3 portes vitrées doubles vers le jardin)
+  const ANNEX_WALLS=[
+    [18.665,24.07,2.71,'x',[]],[-19.75,24.08,2.45,'x',[]],[20.05,39.55,31,'z',[]],[-21,39.54,30.92,'z',[-2.54]],
+    [-0.39,45,40.7,'x',[-15.33,-5.93,13.8]],[16.205,24.07,2.15,'x',[]],[-9.76,24.06,17.36,'x',[-4.32]],[8.185,24.05,9.54,'x',[]],
+    [-6.74,37.48,11.07,'x',[]],[-12.36,30.73,13.07,'z',[]],[-1.14,30.72,13.33,'z',[-4.72,3.61]],[3.3,29.345,10.62,'z',[-3.41,3.54]],
+    [11.05,29.405,10.53,'z',[]],[7.2,34.73,7.67,'x',[]],[7.18,29.01,7.67,'x',[]],[8.18,31.85,5.53,'z',[1.18]],
+    [-6.48,28.06,7.83,'z',[-1.71,2.26]],[-6.75,32.07,11.11,'x',[]],[-3.37,41.24,7.55,'z',[]],[5.6,41.25,7.65,'z',[]],
+    [1.16,37.48,8.96,'x',[-0.09]],[-9.42,28.02,5.73,'x',[]],[15.49,34.72,9.14,'x',[]],[10.76,39.825,10.15,'z',[]],[15.16,29.35,10.53,'z',[2.0]]
+  ];
+  ANNEX_WALLS.forEach(([x,z,len,axis,gaps])=>annexWall(x,z,len,axis,gaps));
+  [[-15.72,45,2.8],[-6.32,45,2.8],[13.41,45,2.8]].forEach(([x,z,len])=>annexDoubleDoorX(x,z,len));
+  // portes (bois, simples)
+  [[-1.14,26,2.4,'z'],[3.3,25.94,2.4,'z'],[3.32,32.88,2.4,'z'],[8.16,33.03,2.4,'z'],[-6.48,26.35,2.4,'z'],
+   [-6.5,30.32,2.4,'z'],[-1.12,34.33,2.4,'z'],[1.07,37.46,2.4,'x'],[-21,37,2.4,'z'],[-14.08,24.07,2.4,'x'],[15.15,31.35,2.4,'z']
+  ].forEach(([x,z,len,axis])=>annexDoor(x,z,len,axis));
+  // plaques des pièces
+  [["WC Femmes",-6.72,24.3],["Local informatique",1.12,37.64],["WC PMR",7.24,24.3],["WC Homme",7.175,29.2],
+   ["Chaufferie / Gaz",7.67,34.9],["Salle de repos",17.575,24.3],["Salle de formation",15.41,34.9]
+  ].forEach(([label,x,z])=>signPlane(label,x,2.9,z,0,2.0,"#1864ab"));
+  // sanitaires
+  [[-2.85,31.66,0],[5.92,29.4,0],[5.9,28.53,0]].forEach(([x,z,ry])=>lavaboFn(x,z,ry));
+  [[9.7,29.46,90],[-11.92,30.05,0],[-12.02,25.88,0]].forEach(([x,z,ry])=>wcFn(x,z,ry));
+  [[5.9,29.1,0],[5.9,28.92,0],[-2.89,31.99,0]].forEach(([x,z,ry])=>miroirFn(x,z,ry));
 }
 function buildGardeCorps(){
   // 1 SEUL garde-corps, à GAUCHE du passage (à droite l'open space va jusqu'au passage)
@@ -1757,22 +1810,26 @@ function tree(x,z){
 }
 function buildParking(){
   // bitume AGRANDI côté est (parking + voie jusqu'au point de rassemblement)
-  const asph=new THREE.Mesh(new THREE.PlaneGeometry(46,66),new THREE.MeshStandardMaterial({color:0x4a4e55,roughness:1}));
-  asph.rotation.x=-Math.PI/2;asph.position.set(40,0.0,3);asph.receiveShadow=true;scene.add(asph);
+  const asph=new THREE.Mesh(new THREE.PlaneGeometry(46,90),new THREE.MeshStandardMaterial({color:0x4a4e55,roughness:1}));
+  asph.rotation.x=-Math.PI/2;asph.position.set(40,0.0,15);asph.receiveShadow=true;scene.add(asph);
   // (hangar supprimé — laisse la vue dégagée sur le train)
   // arbres le long du parking
-  [[44,-22],[44,26],[20,-26],[-24.16,20.72],[-23.78,19.05]].forEach(p=>tree(p[0],p[1]));
+  [[44,-22],[44,26],[44,45],[44,58],[20,-26],[-24.16,20.72],[-23.78,19.05]].forEach(p=>tree(p[0],p[1]));
   const line=new THREE.MeshBasicMaterial({color:0xe2e5ea});
   // places perpendiculaires le long du bâtiment (x≈25), voitures nez vers le mur
   const cols=[0x9aa0a6,0x7a1f2b,0x33404a,0xc23a2a,0x355a8a,0xb7bcc2,0x3a7a4a,0x222428];
   let ci=2;
-  for(let z=-24;z<=18;z+=2.4){ // places jusqu'à la porte d'entrée (nord)
+  for(let z=-24;z<=15.6;z+=2.4){ // places jusqu'au passage d'entrée (nord)
     const l=new THREE.Mesh(new THREE.PlaneGeometry(4.4,0.12),line);l.rotation.x=-Math.PI/2;l.position.set(25.6,0.02,z+1.2);scene.add(l);
     if((z<-16||z>-11)&&Math.random()<0.78){ car(25.4,z,0,cols[ci++%cols.length]); } // on laisse libre la voie de la sortie (z≈-14)
   }
+  for(let z=28.4;z<=58;z+=2.4){ // places qui REPRENNENT après le passage d'entrée (sud)
+    const l=new THREE.Mesh(new THREE.PlaneGeometry(4.4,0.12),line);l.rotation.x=-Math.PI/2;l.position.set(25.6,0.02,z+1.2);scene.add(l);
+    if(Math.random()<0.78){ car(25.4,z,0,cols[ci++%cols.length]); }
+  }
   // passage piéton (zébra) vers le point de rassemblement
   for(let i=0;i<6;i++){const s=new THREE.Mesh(new THREE.PlaneGeometry(0.55,3.2),line);s.rotation.x=-Math.PI/2;s.position.set(29.5+i*0.95,0.025,-14);scene.add(s);}
-  // passage piéton DEVANT L'ENTRÉE (porte d'accès, z≈22)
+  // passage piéton DEVANT L'ENTRÉE (porte d'accès, z≈22) — laissé LIBRE (pas de place de parking, PMR de part et d'autre)
   for(let i=0;i<6;i++){const s=new THREE.Mesh(new THREE.PlaneGeometry(0.55,3.2),line);s.rotation.x=-Math.PI/2;s.position.set(28.5+i*0.95,0.025,22);scene.add(s);}
 
   // ---- AUVENT / préau en débord de toit le long du bâtiment (x=22) ----
@@ -1797,48 +1854,48 @@ function buildParking(){
     const pl=new THREE.Mesh(new THREE.PlaneGeometry(0.6,0.3),saufMat);pl.position.set(27.5,1.95,z);pl.rotation.y=-Math.PI/2;scene.add(pl);
   });
 
-  // ---- places PMR bleues (pictogramme ♿) ----
+  // ---- places PMR bleues (pictogramme ♿) — 2 de chaque côté du passage d'entrée (z≈22) ----
   const pmrMat=new THREE.MeshBasicMaterial({map:pmrTex()});
-  [-13.5,3.6].forEach(z=>{const p=new THREE.Mesh(new THREE.PlaneGeometry(2.3,4.3),pmrMat);p.rotation.x=-Math.PI/2;p.position.set(25.4,0.015,z);scene.add(p);});
+  [18,20.4,23.6,26].forEach(z=>{const p=new THREE.Mesh(new THREE.PlaneGeometry(2.3,4.3),pmrMat);p.rotation.x=-Math.PI/2;p.position.set(25.4,0.015,z);scene.add(p);});
 
   // ---- 2e rangée de places de l'autre côté de la voie (1) ----
   const cols2=[0xb7bcc2,0x33404a,0x355a8a,0x7a1f2b,0x9aa0a6,0x3a7a4a,0x222428,0xc23a2a];
   let cj=0;
-  for(let z=-24;z<=10;z+=2.4){
+  for(let z=-24;z<=58;z+=2.4){ // continue sans coupure (pas de passage à traverser de ce côté)
     const l=new THREE.Mesh(new THREE.PlaneGeometry(4.4,0.12),line);l.rotation.x=-Math.PI/2;l.position.set(37.4,0.02,z+1.2);scene.add(l);
     if(Math.random()<0.7) car(37.6,z,Math.PI,cols2[cj++%cols2.length]); // nez vers la voie (-> -x via rotation PI)
   }
   // ---- grillage (clôture) puis 2e parking (2) ----
   const fenceMat=new THREE.MeshStandardMaterial({color:0x8d949c,metalness:.4,roughness:.6,transparent:true,opacity:.5,side:THREE.DoubleSide});
-  const fence=new THREE.Mesh(new THREE.PlaneGeometry(46,1.8),fenceMat);fence.position.set(41,0.9,-7);fence.rotation.y=Math.PI/2;scene.add(fence);
-  for(let z=-30;z<=16;z+=3){const p=new THREE.Mesh(new THREE.BoxGeometry(0.08,1.9,0.08),new THREE.MeshStandardMaterial({color:0x70767e}));p.position.set(41,0.95,z);scene.add(p);}
-  const asph2=new THREE.Mesh(new THREE.PlaneGeometry(12,48),new THREE.MeshStandardMaterial({color:0x4a4e55,roughness:1}));
-  asph2.rotation.x=-Math.PI/2;asph2.position.set(48,0.0,-6);scene.add(asph2);
-  for(let row=0;row<2;row++)for(let z=-22;z<=10;z+=2.5){ if(Math.random()<0.7) car(45+row*5,z,row?Math.PI:0,cols2[cj++%cols2.length]); }
+  const fence=new THREE.Mesh(new THREE.PlaneGeometry(90,1.8),fenceMat);fence.position.set(41,0.9,15);fence.rotation.y=Math.PI/2;scene.add(fence);
+  for(let z=-30;z<=60;z+=3){const p=new THREE.Mesh(new THREE.BoxGeometry(0.08,1.9,0.08),new THREE.MeshStandardMaterial({color:0x70767e}));p.position.set(41,0.95,z);scene.add(p);}
+  const asph2=new THREE.Mesh(new THREE.PlaneGeometry(12,90),new THREE.MeshStandardMaterial({color:0x4a4e55,roughness:1}));
+  asph2.rotation.x=-Math.PI/2;asph2.position.set(48,0.0,15);scene.add(asph2);
+  for(let row=0;row<2;row++)for(let z=-22;z<=58;z+=2.5){ if(Math.random()<0.7) car(45+row*5,z,row?Math.PI:0,cols2[cj++%cols2.length]); }
   // ---- butte HAUTE + voies ferrées + caténaires (3) ----
   const MH=3.8;
   const earthMat=new THREE.MeshStandardMaterial({color:0x6e7a4f,roughness:1,side:THREE.DoubleSide});
   // corps du talus (côté arrière, non visible) + FACE EN PENTE côté parking
-  const body=new THREE.Mesh(new THREE.BoxGeometry(9,MH,60),earthMat);body.position.set(58.4,MH/2,-6);scene.add(body);
+  const body=new THREE.Mesh(new THREE.BoxGeometry(9,MH,96),earthMat);body.position.set(58.4,MH/2,12);scene.add(body);
   const run=5.4, rise=MH, sl=Math.hypot(run,rise), ang=Math.atan2(rise,run);
-  const slope=new THREE.Mesh(new THREE.BoxGeometry(sl,0.3,60),earthMat);
-  slope.position.set(54.4-run/2,MH/2,-6);slope.rotation.z=ang;scene.add(slope); // pente de (49,0) à (54.4,MH)
-  const ballast=new THREE.Mesh(new THREE.PlaneGeometry(7,60),new THREE.MeshStandardMaterial({color:0x6b6e72,roughness:1}));
-  ballast.rotation.x=-Math.PI/2;ballast.position.set(56,MH+0.02,-6);scene.add(ballast);
+  const slope=new THREE.Mesh(new THREE.BoxGeometry(sl,0.3,96),earthMat);
+  slope.position.set(54.4-run/2,MH/2,12);slope.rotation.z=ang;scene.add(slope); // pente de (49,0) à (54.4,MH)
+  const ballast=new THREE.Mesh(new THREE.PlaneGeometry(7,96),new THREE.MeshStandardMaterial({color:0x6b6e72,roughness:1}));
+  ballast.rotation.x=-Math.PI/2;ballast.position.set(56,MH+0.02,12);scene.add(ballast);
   const railMat=new THREE.MeshStandardMaterial({color:0xb0b3b8,metalness:.7,roughness:.4});
   const sleeperMat=new THREE.MeshStandardMaterial({color:0x4a3b2c,roughness:.95});
-  [54.4,55.6,56.8,58.0].forEach(rx=>{const r=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,60),railMat);r.position.set(rx,MH+0.1,-6);scene.add(r);}); // 2 voies (4 rails)
-  for(let z=-32;z<=20;z+=1.4){const s=new THREE.Mesh(new THREE.BoxGeometry(5.2,0.08,0.3),sleeperMat);s.position.set(56.2,MH+0.04,z);scene.add(s);}
+  [54.4,55.6,56.8,58.0].forEach(rx=>{const r=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,96),railMat);r.position.set(rx,MH+0.1,12);scene.add(r);}); // 2 voies (4 rails)
+  for(let z=-32;z<=60;z+=1.4){const s=new THREE.Mesh(new THREE.BoxGeometry(5.2,0.08,0.3),sleeperMat);s.position.set(56.2,MH+0.04,z);scene.add(s);}
   // poteaux + caténaires
   const poleMat=new THREE.MeshStandardMaterial({color:0x6f747b,metalness:.5,roughness:.5});
   const wireMat=new THREE.MeshBasicMaterial({color:0x2b2f35});
-  for(let z=-28;z<=20;z+=8){
+  for(let z=-28;z<=60;z+=8){
     const pole=new THREE.Mesh(new THREE.BoxGeometry(0.22,5.6,0.22),poleMat);pole.position.set(54.3,MH+2.8,z);scene.add(pole);
     const arm=new THREE.Mesh(new THREE.BoxGeometry(4.4,0.13,0.13),poleMat);arm.position.set(55.2,MH+5.0,z);scene.add(arm);
     const drop=new THREE.Mesh(new THREE.BoxGeometry(0.06,1.2,0.06),wireMat);drop.position.set(56,MH+4.4,z);scene.add(drop);
   }
-  const mess=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,60),wireMat);mess.position.set(56,MH+5.0,-6);scene.add(mess); // câble porteur
-  const cont=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,60),wireMat);cont.position.set(56,MH+3.8,-6);scene.add(cont); // fil de contact
+  const mess=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,96),wireMat);mess.position.set(56,MH+5.0,12);scene.add(mess); // câble porteur
+  const cont=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,96),wireMat);cont.position.set(56,MH+3.8,12);scene.add(cont); // fil de contact
   // ---- rame de train LIO Occitanie sur la voie (x≈55) ----
   const trY=MH+0.12;
   const tRed =new THREE.MeshStandardMaterial({color:0xcd0037,roughness:.5,metalness:.15}); // rouge LIO carmillon
@@ -1986,14 +2043,24 @@ function animate(){
     const jours=['DIM','LUN','MAR','MER','JEU','VEN','SAM'],now=new Date();
     updateLedTex(clockLedTex,jours[now.getDay()]+'  '+now.toLocaleTimeString('fr-FR'));
   }
-  if(controls.isLocked){
+  if(started&&!isModalOpen()){
+    // regard : la souris tourne la tête sans pointer lock — plus le curseur s'éloigne du centre, plus ça tourne vite
+    const deadzone=0.15,lookSpeed=2.4;
+    const ax=Math.abs(mouseNX)>deadzone?Math.sign(mouseNX)*(Math.abs(mouseNX)-deadzone)/(1-deadzone):0;
+    const ay=Math.abs(mouseNY)>deadzone?Math.sign(mouseNY)*(Math.abs(mouseNY)-deadzone)/(1-deadzone):0;
+    camera.rotation.y-=ax*lookSpeed*dt;
+    camera.rotation.x=Math.max(-1.15,Math.min(1.15,camera.rotation.x-ay*lookSpeed*dt));
+    // déplacement au clavier (ZQSD/flèches), relatif au regard (yaw uniquement, indépendant du pitch)
     vel.x-=vel.x*8*dt;vel.z-=vel.z*8*dt;
     dirv.z=Number(move.f)-Number(move.b);dirv.x=Number(move.r)-Number(move.l);dirv.normalize();
     const sp=46;
     if(move.f||move.b)vel.z-=dirv.z*sp*dt;
     if(move.l||move.r)vel.x-=dirv.x*sp*dt;
-    controls.moveRight(-vel.x*dt);controls.moveForward(-vel.z*dt);
+    const yaw=camera.rotation.y,sy=Math.sin(yaw),cy=Math.cos(yaw);
+    const rx=cy,rz=-sy, fx=-sy,fz=-cy; // vecteurs droite/avant de la caméra (yaw seul)
     const o=camera.position;
+    o.x += rx*(-vel.x*dt) + fx*(-vel.z*dt);
+    o.z += rz*(-vel.x*dt) + fz*(-vel.z*dt);
     o.x=Math.max(WORLD.minX,Math.min(WORLD.maxX,o.x));
     o.z=Math.max(WORLD.minZ,Math.min(WORLD.maxZ,o.z));o.y=2.6;
     resolveCollision();
@@ -2059,7 +2126,6 @@ function animate(){
 /* ===================== UI scénario ===================== */
 function isModalOpen(){return $("#modal").style.display!=="none";}
 function openScenario(h){
-  controls.unlock();
   const sc=h.data,th=THEMES[sc.theme];
   if(sc.theme==='incendie') startAlarm(); // l'alarme incendie retentit dès qu'on inspecte la zone (E)
   $("#modal").style.display="flex";
@@ -2091,21 +2157,21 @@ function closeScenario(h){
     evacMission={h,stage:'toExit'};
     h.ring.material.color=new THREE.Color(0xf08c00); // orange : évacuation en cours
     startEvac();
-    $("#modal").style.display="none";controls.lock();return;
+    $("#modal").style.display="none";return;
   }
   // Feu électrique : QCM réussi -> mission multi-étapes (couper élec. -> extincteur -> éteindre)
   if(!h.resolved && h.data.theme==='feu' && h.answeredOk){
     fireMission={h,stage:'cut'};
     h.ring.material.color=new THREE.Color(0xf08c00); // orange : mission en cours
     showMission();
-    $("#modal").style.display="none";controls.lock();return;
+    $("#modal").style.display="none";return;
   }
   // DAE : QCM réussi -> mission multi-étapes (aller chercher le DAE -> revenir soigner la victime)
   if(!h.resolved && h.data.theme==='dae' && h.answeredOk){
     daeMission={h,stage:'getDae'};
     h.ring.material.color=new THREE.Color(0xf08c00); // orange : mission en cours
     showDaeMission();
-    $("#modal").style.display="none";controls.lock();return;
+    $("#modal").style.display="none";return;
   }
   if(h.data.theme==='incendie') stopAlarm(); // mauvaise réponse (pas d'évacuation) -> on coupe la sirène
   if(!h.resolved){
@@ -2118,7 +2184,6 @@ function closeScenario(h){
   }
   $("#modal").style.display="none";
   if(state.resolved>=SCENARIOS.length){endGame();return;}
-  controls.lock();
 }
 function showMission(){
   const m=$("#mission");
@@ -2181,7 +2246,6 @@ const DAE_USE_Q={
   tip:"Le DAE ne choque que si nécessaire : il analyse avant. Reprends le massage cardiaque dès que l'appareil te le demande, en alternance."
 };
 function openDaeUseModal(){
-  controls.unlock();
   const sc=DAE_USE_Q;
   $("#modal").style.display="flex";
   $("#modalBody").innerHTML=`
@@ -2216,7 +2280,6 @@ function finishDaeMission(){
   $("#mission").style.display='none';$("#prompt").style.display='none';
   updateHud();
   if(state.resolved>=SCENARIOS.length){endGame();return;}
-  controls.lock();
 }
 function startEvac(){
   if(evacGroup) evacGroup.visible=true;          // affiche les flèches d'évacuation
@@ -2293,8 +2356,8 @@ function key(e,d){
         else if(activeHotspot) openScenario(activeHotspot);
       }
       break;
-    case'KeyI':
-      if(d){DEBUG_ON=!DEBUG_ON;DEBUG_LABELS.forEach(s=>s.visible=DEBUG_ON);}
+    case'Escape':
+      if(d&&document.fullscreenElement) document.exitFullscreen();
       break;
   }
 }
@@ -2352,9 +2415,12 @@ function scanBadge3D(){
 $("#startBtn").onclick=()=>{
   $("#intro").style.display="none";started=true;
   audio(); // débloque le son (geste utilisateur)
-  controls.lock(); // le clic sur le bouton autorise le verrouillage du pointeur
 };
-renderer.domElement.addEventListener('click',()=>{if(started&&!isModalOpen())controls.lock();});
+// regard : position de la souris à l'écran (pas besoin de cliquer/verrouiller le pointeur)
+addEventListener('mousemove',e=>{
+  mouseNX=(e.clientX/innerWidth)*2-1;
+  mouseNY=(e.clientY/innerHeight)*2-1;
+});
 updateHud();
 </script>
 </body>

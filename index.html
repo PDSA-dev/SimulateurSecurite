@@ -444,7 +444,7 @@ const COLLIDERS=[]; // rempli au build
 const ENTRANCE_EXT={x:8,z:20.4};                            // extincteur dans le couloir, près de l'accès
 const EXTINGUISHERS=[ENTRANCE_EXT]; // un seul extincteur
 const ELEC_CUTOFF={x:13.6,z:21.1};                          // tableau de coupure élec. côté COULOIR (de l'autre côté du mur z=21)
-const ASSEMBLY={x:25.5,z:31.5};                             // point de rassemblement (éditeur) — sud-est du parking
+const ASSEMBLY={x:23.19,z:53.08};                           // point de rassemblement (éditeur) — sud, près du jardin/parking prolongé
 const WORLD={minX:-26,maxX:40,minZ:-28,maxZ:60};            // bornes de déplacement (intérieur + extérieur + aile sud/jardin + parking)
 
 /* ===================== État ===================== */
@@ -800,7 +800,7 @@ function buildWorld(){
   const segX=(z,xa,xb)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(xb-xa,H),wallMat);m.position.set((xa+xb)/2,H/2,z);m.receiveShadow=true;scene.add(m);COLLIDERS.push({minX:xa,maxX:xb,minZ:z-0.6,maxZ:z+0.6,type:'wall'});};
   const segZ=(x,za,zb)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(zb-za,H),wallMat);m.position.set(x,H/2,(za+zb)/2);m.rotation.y=Math.PI/2;m.receiveShadow=true;scene.add(m);COLLIDERS.push({minX:x-0.6,maxX:x+0.6,minZ:za,maxZ:zb,type:'wall'});};
   segX(-D/2,-W/2,W/2);                          // mur nord (fond)
-  segX(D/2,-W/2,0); segX(D/2,2.6,W/2);           // mur sud, ouverture x[0,2.6] vers le local WC/vestiaire
+  // mur sud : entièrement géré par ANNEX_WALLS (buildServiceRoom) avec ses portes/fenêtres — pas de mur plein ici
   // --- murs est/ouest avec fenêtres TRAVERSANTES (vrais trous, visibles depuis l'extérieur) ---
   const fillMat=new THREE.MeshStandardMaterial({color:0xe2d8c6,roughness:1,side:THREE.DoubleSide}); // remplissage beige du mur
   const winGlass=new THREE.MeshStandardMaterial({color:0xcfe6f6,emissive:0xbcd9ef,emissiveIntensity:.12,roughness:.06,metalness:.1,transparent:true,opacity:.32,side:THREE.DoubleSide});
@@ -1390,18 +1390,17 @@ function buildFurniture(){
   };
   // ---- armoires (éditeur) ----
   [-20,-19,-15.5,-14.5,-11,-10].forEach(x=>armoire(x,-23.5,0));       // bank nord
-  [8,8.5,9,9.5].forEach(z=>armoire(14,z,0));                           // bureau ACM est
+  armoire(13.83,7.92,Math.PI*1.5); armoire(13.83,8.94,Math.PI*1.5);   // bureau ACM est
   [-19.03,-18].forEach(x=>armoire(x,20.71,Math.PI));                  // Bureau du chef, mur sud
   armoire(-6.91,20.71,Math.PI);                                       // DPX, mur sud
   armoire(-4.95,12.86,0); armoire(-5.99,12.85,0);                      // DPX
   armoire(13.22,14.32,Math.PI/2); armoire(13.22,15.36,Math.PI/2);      // ACM, côté panneau ouest (éditeur)
-  armoire(-12.24,16.65,Math.PI/2);                                    // DPX, contre la cloison vitrée partagée avec Bureau du chef (éditeur)
+  armoire(-12.24,16.65,Math.PI*1.5);                                  // DPX, contre la cloison vitrée partagée avec Bureau du chef (éditeur)
   // ---- imprimantes (éditeur) ----
-  printer(-6.04,20.71);             // près des armoires DPX
-  printer(14,10,Math.PI/2);        // ACM est (rot 90°)
+  printer(-6.04,20.71,Math.PI);     // près des armoires DPX
+  printer(13.86,9.81,Math.PI*1.5); // ACM est
   // ---- sécurité (éditeur) — pas de SSI ----
   extinguisher(21.5,-12);     // près de la sortie de secours
-  extinguisher(3.9,20.0);     // près de l'entrée open space
   alarmTrigger(5.6,20.9);     // déclenchement d'alarme près de la porte
 }
 function buildOfficeDoors(){
@@ -1617,13 +1616,18 @@ function buildCorridor(){
   c.position.set(0,0.13,ROOM.d/2-0.05);c.rotation.y=Math.PI;scene.add(c);
 }
 function buildServiceRoom(){
-  // AILE SUD (éditeur) : WC Femmes, WC Homme, WC PMR, Local informatique, Chaufferie/Gaz,
-  // Salle de repos, Salle de formation, Jardin. Reconstruite à partir du plan détaillé (murs/portes/sanitaires).
+  // AILE SUD (éditeur) : WC Femmes, Vestiaire, Cuisine x2, WC Homme, WC PMR, Local informatique, Chaufferie/Gaz,
+  // Salle de repos, Salle de formation, Jardin (terrasse). Reconstruite à partir du plan détaillé (murs/portes/sanitaires/mobilier).
   const H=ROOM.h;
   const wallMat=new THREE.MeshStandardMaterial({map:repeatTex(wallTex(),4,2),color:0xe2d8c6,roughness:1,side:THREE.DoubleSide});
+  const glassMat=new THREE.MeshStandardMaterial({color:0xcfe6f6,emissive:0xbcd9ef,emissiveIntensity:.12,roughness:.06,metalness:.1,transparent:true,opacity:.32,side:THREE.DoubleSide});
+  const woodDoor=new THREE.MeshStandardMaterial({color:0xddb98a,roughness:.55});
+  const darkFrame=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
+  // mur avec portes (fermées, gaps.type='door') et fenêtres pleine hauteur (gaps.type='window', vitrées + collider)
   const annexWall=(x,z,len,axis,gaps)=>{
     const half=1.45; let cur=-len/2; const segs=[];
-    (gaps||[]).slice().sort((a,b)=>a-b).forEach(g=>{ const g0=g-half,g1=g+half; if(g0>cur)segs.push([cur,g0]); cur=Math.max(cur,g1); });
+    const all=(gaps||[]).slice().sort((a,b)=>a.at-b.at);
+    all.forEach(g=>{ const g0=g.at-half,g1=g.at+half; if(g0>cur)segs.push([cur,g0]); cur=Math.max(cur,g1); });
     segs.push([cur,len/2]);
     segs.forEach(([t0,t1])=>{
       const plen=t1-t0; if(plen<0.05)return; const pc=(t0+t1)/2;
@@ -1633,18 +1637,44 @@ function buildServiceRoom(){
       if(axis==='x')COLLIDERS.push({minX:px-plen/2,maxX:px+plen/2,minZ:z-0.12,maxZ:z+0.12,type:'wall'});
       else COLLIDERS.push({minX:x-0.12,maxX:x+0.12,minZ:pz-plen/2,maxZ:pz+plen/2,type:'wall'});
     });
+    all.forEach(g=>{
+      const pc=g.at, glen=g.len||2.4;
+      const px=axis==='x'?x+pc:x, pz=axis==='x'?z:z+pc;
+      if(g.type==='window'){
+        const wh=H-0.2;
+        const gl=new THREE.Mesh(new THREE.PlaneGeometry(glen-0.1,wh),glassMat);gl.position.set(px,H/2,pz);
+        if(axis==='z')gl.rotation.y=Math.PI/2; scene.add(gl);
+        // cadre (montants + traverses) pour que la fenêtre se distingue clairement d'un simple trou
+        const barT=0.1, barD=0.14;
+        const mkBar=(bw,bh,lx,ly)=>{
+          const geo=axis==='x'?new THREE.BoxGeometry(bw,bh,barD):new THREE.BoxGeometry(barD,bh,bw);
+          const m=new THREE.Mesh(geo,darkFrame);
+          if(axis==='x') m.position.set(px+lx,H/2+ly,pz); else m.position.set(px,H/2+ly,pz+lx);
+          scene.add(m);
+        };
+        mkBar(glen+0.12,barT,0,wh/2); mkBar(glen+0.12,barT,0,-wh/2); // traverses haute/basse
+        mkBar(barT,wh+0.12,-glen/2,0); mkBar(barT,wh+0.12,glen/2,0);  // montants gauche/droite
+        if(glen>2.6) mkBar(barT,wh+0.12,0,0); // meneau central pour les fenêtres larges
+        if(axis==='x')COLLIDERS.push({minX:px-glen/2,maxX:px+glen/2,minZ:z-0.12,maxZ:z+0.12,type:'wall'});
+        else COLLIDERS.push({minX:x-0.12,maxX:x+0.12,minZ:pz-glen/2,maxZ:pz+glen/2,type:'wall'});
+      } else { // linteau plein (bois) au-dessus de chaque porte, jusqu'au plafond
+        const dh=H-1.0, aboveH=H-dh;
+        const fill=new THREE.Mesh(new THREE.BoxGeometry(axis==='x'?glen+0.2:0.1,aboveH,axis==='x'?0.1:glen+0.2),wallMat);
+        fill.position.set(px,dh+aboveH/2,pz);scene.add(fill);
+      }
+    });
   };
-  const annexDoor=(x,z,len,axis)=>{
-    const woodDoor=new THREE.MeshStandardMaterial({color:0xddb98a,roughness:.55});
-    const dark=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
+  const annexDoor=(x,z,len,axis)=>{ // vantail FERMÉ, dans l'embrasure
     const g=new THREE.Group();g.position.set(x,0,z);if(axis==='x')g.rotation.y=Math.PI/2;scene.add(g);
     const dh=H-1.0,lw=len-0.12;
     const leaf=new THREE.Mesh(new THREE.BoxGeometry(0.06,dh,lw),woodDoor);leaf.position.set(0,dh/2,0);g.add(leaf);
-    [-len/2,len/2].forEach(p=>{const m=new THREE.Mesh(new THREE.BoxGeometry(0.16,dh+0.14,0.12),dark);m.position.set(0,dh/2,p);g.add(m);});
+    [-len/2,len/2].forEach(p=>{const m=new THREE.Mesh(new THREE.BoxGeometry(0.16,dh+0.14,0.12),darkFrame);m.position.set(0,dh/2,p);g.add(m);});
     const h=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.5,8),M.metal);h.position.set(0.07,1.15,lw/2-0.18);g.add(h);
-    // comble le mur au-dessus de la porte jusqu'au plafond (sinon vide entre le haut de porte et le plafond)
-    const aboveH=H-dh;
-    if(aboveH>0.05){const fill=new THREE.Mesh(new THREE.BoxGeometry(0.1,aboveH,len),wallMat);fill.position.set(0,dh+aboveH/2,0);g.add(fill);}
+  };
+  const annexDoorOpen=(x,z,len,axis,flip,flipEnd)=>{ // vantail OUVERT à 90°, plaqué contre le mur (même géométrie que le plan 2D)
+    const h=len/2, s=flip?-1:1, e2=flipEnd?-1:1;
+    if(axis==='x') annexDoor(x-e2*h, z+s*len/2, len, 'z');
+    else annexDoor(x+s*len/2, z-e2*h, len, 'x');
   };
   const annexDoubleDoorX=(cx,cz,len)=>{
     const glass=new THREE.MeshStandardMaterial({color:0xbfe3ff,transparent:true,opacity:.3,roughness:.04,metalness:.2,side:THREE.DoubleSide});
@@ -1678,7 +1708,92 @@ function buildServiceRoom(){
     const frame=new THREE.Mesh(new THREE.BoxGeometry(0.85,1.05,0.03),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.5}));frame.position.set(0,1.55,0.02);g.add(frame);
     const mir=new THREE.Mesh(new THREE.PlaneGeometry(0.78,0.98),new THREE.MeshStandardMaterial({color:0xcfe0e8,roughness:.05,metalness:.6}));mir.position.set(0,1.55,0.036);g.add(mir);
   };
-  // sol/plafond de l'aile (bâtiment couvert, z 24→45) + pelouse du jardin (z 45→55, extérieur)
+  const casierFn=(x,z,ry,w,d)=>{
+    const cw=w||1, cd=d||0.7, ch=1.9;
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const mat=new THREE.MeshStandardMaterial({map:lockerTex(),roughness:.6,metalness:.15});
+    const body=new THREE.Mesh(new THREE.BoxGeometry(cw,ch,cd),mat);body.position.y=ch/2;g.add(body);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(cw+0.03,0.03,cd+0.03),new THREE.MeshStandardMaterial({color:0x8a8270,roughness:.6}));top.position.y=ch+0.015;g.add(top);
+    COLLIDERS.push({minX:x-cw/2,maxX:x+cw/2,minZ:z-cd/2,maxZ:z+cd/2,type:'cabinet'});
+  };
+  const tableFn=(x,z,ry,w,d)=>{
+    const tw=w||1.4, td=d||0.8;
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(tw,0.06,td),new THREE.MeshStandardMaterial({color:0xc9a876,roughness:.6}));top.position.y=0.74;g.add(top);
+    const lx0=tw/2-0.1, lz0=td/2-0.1;
+    [[-lx0,-lz0],[lx0,-lz0],[-lx0,lz0],[lx0,lz0]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.74,8),M.metal);leg.position.set(lx,0.37,lz);g.add(leg);});
+    const along=Math.abs(Math.cos((ry||0)*Math.PI/180))>0.5, hw=tw/2+0.06, hd=td/2+0.06;
+    COLLIDERS.push({minX:x-(along?hw:hd),maxX:x+(along?hw:hd),minZ:z-(along?hd:hw),maxZ:z+(along?hd:hw),type:'desk'});
+  };
+  const chaiseFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const mat=new THREE.MeshStandardMaterial({color:0x8a6d4f,roughness:.7});
+    const seat=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.05,0.42),mat);seat.position.y=0.46;g.add(seat);
+    const back=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.5,0.05),mat);back.position.set(0,0.71,-0.185);g.add(back);
+    [[-0.17,-0.17],[0.17,-0.17],[-0.17,0.17],[0.17,0.17]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.46,6),M.metal);leg.position.set(lx,0.23,lz);g.add(leg);});
+  };
+  const tvFn=(x,z,ry,w)=>{
+    const tw=w||1.1, th=tw*0.562;
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const screen=new THREE.Mesh(new THREE.BoxGeometry(tw,th,0.06),new THREE.MeshStandardMaterial({color:0x111111,roughness:.3}));screen.position.set(0,1.7,0);g.add(screen);
+    const glass=new THREE.Mesh(new THREE.PlaneGeometry(tw-0.08,th-0.06),new THREE.MeshStandardMaterial({color:0x1c2733,roughness:.1,metalness:.6}));glass.position.set(0,1.7,0.035);g.add(glass);
+    const mount=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.5,0.06),new THREE.MeshStandardMaterial({color:0x2a2a2a}));mount.position.set(0,1.35,-0.03);g.add(mount);
+  };
+  const canapeFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const mat=new THREE.MeshStandardMaterial({color:0xa33d3d,roughness:.85}), mat2=new THREE.MeshStandardMaterial({color:0x8a3030,roughness:.85});
+    const base=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.45,0.85),mat);base.position.y=0.28;g.add(base);
+    const back=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.5,0.2),mat);back.position.set(0,0.65,-0.32);g.add(back);
+    [-0.9,0.9].forEach(lx=>{const arm=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.5,0.85),mat2);arm.position.set(lx,0.5,0);g.add(arm);});
+    COLLIDERS.push({minX:x-1.05,maxX:x+1.05,minZ:z-0.5,maxZ:z+0.5,type:'sofa'});
+  };
+  const fauteuilJardinFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const mat=new THREE.MeshStandardMaterial({color:0xb08d57,roughness:.9});
+    const seat=new THREE.Mesh(new THREE.BoxGeometry(0.65,0.08,0.65),mat);seat.position.y=0.42;g.add(seat);
+    const back=new THREE.Mesh(new THREE.BoxGeometry(0.65,0.55,0.08),mat);back.position.set(0,0.7,-0.28);g.add(back);
+    [-0.28,0.28].forEach(lx=>{const arm=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.3,0.6),mat);arm.position.set(lx,0.56,0);g.add(arm);});
+  };
+  const pergolaFn=(x,z,ry,w,d)=>{
+    const pw=w||3.3, pd=d||3.3, hx=pw/2-0.08, hz=pd/2-0.08;
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const postMat=new THREE.MeshStandardMaterial({color:0xc7b299,roughness:.8});
+    [[-hx,-hz],[hx,-hz],[-hx,hz],[hx,hz]].forEach(([lx,lz])=>{const post=new THREE.Mesh(new THREE.BoxGeometry(0.16,2.6,0.16),postMat);post.position.set(lx,1.3,lz);g.add(post);});
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(pw,0.1,pd),postMat);roof.position.y=2.65;g.add(roof);
+    for(let i=-hz+0.1;i<=hz-0.1;i+=0.5){const slat=new THREE.Mesh(new THREE.BoxGeometry(pw,0.06,0.1),postMat);slat.position.set(0,2.72,i);g.add(slat);}
+  };
+  const distribBoissonFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.8,0.8),new THREE.MeshStandardMaterial({color:0x3a6ea5,roughness:.4,metalness:.3}));body.position.y=0.9;g.add(body);
+    const panel=new THREE.Mesh(new THREE.PlaneGeometry(0.6,0.9),new THREE.MeshStandardMaterial({color:0x1a2a3a,roughness:.2}));panel.position.set(0,1.1,0.41);g.add(panel);
+    COLLIDERS.push({minX:x-0.5,maxX:x+0.5,minZ:z-0.45,maxZ:z+0.45,type:'cabinet'});
+  };
+  const distribCafeFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.5,1.1,0.5),new THREE.MeshStandardMaterial({color:0x6b4a2f,roughness:.5}));body.position.y=0.55;g.add(body);
+    const tray=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.05,0.2),new THREE.MeshStandardMaterial({color:0x2a2a2a}));tray.position.set(0,0.35,0.2);g.add(tray);
+    COLLIDERS.push({minX:x-0.3,maxX:x+0.3,minZ:z-0.3,maxZ:z+0.3,type:'cabinet'});
+  };
+  const plandetravailFn=(x,z,ry,w)=>{
+    const pw=w||1.6;
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(pw,0.06,0.6),new THREE.MeshStandardMaterial({color:0xd7d2c4,roughness:.4}));top.position.y=0.9;g.add(top);
+    const cab=new THREE.Mesh(new THREE.BoxGeometry(pw,0.85,0.58),new THREE.MeshStandardMaterial({color:0xe8e4da,roughness:.6}));cab.position.y=0.44;g.add(cab);
+    const along=Math.abs(Math.cos((ry||0)*Math.PI/180))>0.5, hw=pw/2+0.03;
+    COLLIDERS.push({minX:x-(along?hw:0.33),maxX:x+(along?hw:0.33),minZ:z-(along?0.33:hw),maxZ:z+(along?0.33:hw),type:'cabinet'});
+  };
+  const microondeFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.35),new THREE.MeshStandardMaterial({color:0x4a4d52,roughness:.4,metalness:.3}));body.position.y=1.05;g.add(body);
+    const door=new THREE.Mesh(new THREE.PlaneGeometry(0.32,0.22),new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.2}));door.position.set(0.02,1.05,0.176);g.add(door);
+  };
+  const frigoFn=(x,z,ry)=>{
+    const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.7,1.8,0.65),new THREE.MeshStandardMaterial({color:0xe8e8e8,roughness:.35,metalness:.2}));body.position.y=0.9;g.add(body);
+    const handle=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.5,0.04),M.metal);handle.position.set(0.3,1.1,0.35);g.add(handle);
+    COLLIDERS.push({minX:x-0.4,maxX:x+0.4,minZ:z-0.38,maxZ:z+0.38,type:'cabinet'});
+  };
+  // sol/plafond de l'aile (bâtiment couvert, z 24→45) + pelouse du jardin/terrasse (z 45→55, extérieur)
   const annexCX=(-21+20.05)/2, annexW=20.05-(-21), annexCZ=(24+45)/2, annexD=45-24;
   const annexFloor=new THREE.Mesh(new THREE.PlaneGeometry(annexW,annexD),new THREE.MeshStandardMaterial({map:repeatTex(tileTex(),annexW/1.4,annexD/1.4),color:0xa99e84,roughness:.7,metalness:.03}));
   annexFloor.rotation.x=-Math.PI/2;annexFloor.position.set(annexCX,0.01,annexCZ);annexFloor.receiveShadow=true;scene.add(annexFloor);
@@ -1686,34 +1801,85 @@ function buildServiceRoom(){
   annexCeil.rotation.x=Math.PI/2;annexCeil.position.set(annexCX,H,annexCZ);scene.add(annexCeil);
   const grass=new THREE.Mesh(new THREE.PlaneGeometry(annexW,10.2),new THREE.MeshStandardMaterial({color:0x5a8a4a,roughness:1}));
   grass.rotation.x=-Math.PI/2;grass.position.set(annexCX,0.005,50);grass.receiveShadow=true;scene.add(grass);
-  [[-10,48],[10,52],[-15,53]].forEach(p=>tree(annexCX+p[0],p[1]));
   // éclairage des pièces
-  [[-6.72,30.8],[7.2,29.4],[7.67,39.9],[15.4,39.9],[17.6,29.4],[1.1,41.2],[1.68,30.7]].forEach(([lx,lz])=>{
+  [[-6.72,28.5],[-6.73,34.8],[-16.69,30.8],[-12.25,41.2],[7.2,29.4],[7.67,39.9],[15.4,39.9],[17.6,29.4],[1.1,41.2],[1.68,30.7],[13.08,29.4]].forEach(([lx,lz])=>{
     const pl=new THREE.PointLight(0xfff3da,0.45,14);pl.position.set(lx,H-0.6,lz);scene.add(pl);
   });
-  // cloisons + mur extérieur sud (avec 3 portes vitrées doubles vers le jardin)
+  // cloisons (portes/fenêtres passées en {at,len,type})
   const ANNEX_WALLS=[
-    [18.665,24.07,2.71,'x',[]],[-19.75,24.08,2.45,'x',[]],[20.05,39.55,31,'z',[]],[-21,39.54,30.92,'z',[-2.54]],
-    [-0.39,45,40.7,'x',[-15.33,-5.93,13.8]],[16.205,24.07,2.15,'x',[]],[-9.76,24.06,17.36,'x',[-4.32]],[8.185,24.05,9.54,'x',[]],
-    [-6.74,37.48,11.07,'x',[]],[-12.36,30.73,13.07,'z',[]],[-1.14,30.72,13.33,'z',[-4.72,3.61]],[3.3,29.345,10.62,'z',[-3.41,3.54]],
-    [11.05,29.405,10.53,'z',[]],[7.2,34.73,7.67,'x',[]],[7.18,29.01,7.67,'x',[]],[8.18,31.85,5.53,'z',[1.18]],
-    [-6.48,28.06,7.83,'z',[-1.71,2.26]],[-6.75,32.07,11.11,'x',[]],[-3.37,41.24,7.55,'z',[]],[5.6,41.25,7.65,'z',[]],
-    [1.16,37.48,8.96,'x',[-0.09]],[-9.42,28.02,5.73,'x',[]],[15.49,34.72,9.14,'x',[]],[10.76,39.825,10.15,'z',[]],[15.16,29.35,10.53,'z',[2.0]]
+    [18.665,24.07,2.71,'x',[]],[-19.75,24.08,2.45,'x',[]],
+    [20.05,39.55,31,'z',[{at:8.45,len:3,type:'door'},{at:2.03,len:3,type:'window'},{at:-1.99,len:3,type:'window'},{at:-13.16,len:3,type:'window'},{at:-9.15,len:3,type:'window'}]],
+    [19.65,21.01,4.68,'x',[]],[-20.245,21.02,3.47,'x',[]],
+    [-21,39.54,30.92,'z',[{at:-12.14,len:3,type:'window'},{at:-6.66,len:3,type:'window'},{at:0.24,len:3,type:'window'}]],
+    [16.205,24.07,2.15,'x',[]],
+    [-9.76,24.06,17.36,'x',[{at:-4.85,len:2.4,type:'door'}]],
+    [8.03,24.05,9.45,'x',[{at:4.85,len:2.4,type:'door'}]],
+    [-0.39,45,40.7,'x',[{at:-16.02,len:3.01,type:'door'},{at:-7.84,len:3.01,type:'door'},{at:15.62,len:2.8,type:'door'}]],
+    [-6.705,37.48,11,'x',[]],[-12.36,30.945,13.5,'z',[]],
+    [-1.14,30.72,13.33,'z',[{at:-4.71,len:2.4,type:'door'},{at:3.57,len:2.4,type:'door'}]],
+    [3.3,29.345,10.62,'z',[{at:-3.195,len:2.4,type:'door'},{at:3.595,len:2.4,type:'door'}]],
+    [11.05,29.405,10.53,'z',[]],[7.2,34.73,7.67,'x',[]],[7.18,29.01,7.67,'x',[]],
+    [8.18,31.85,5.53,'z',[{at:1.32,len:2.4,type:'door'}]],
+    [-6.48,28.06,7.83,'z',[{at:-1.71,len:2.4,type:'door'},{at:2.26,len:2.4,type:'door'}]],
+    [-6.75,32.07,11.11,'x',[]],[-3.37,41.24,7.55,'z',[]],[5.6,41.25,7.65,'z',[]],
+    [1.16,37.48,8.96,'x',[{at:-0.09,len:2.4,type:'door'}]],
+    [-9.42,28.02,5.73,'x',[]],
+    [15.49,34.72,9.14,'x',[{at:-2.94,len:2.4,type:'door'}]],
+    [10.76,39.825,10.15,'z',[]],
+    [15.16,29.35,10.53,'z',[{at:2.0,len:2.4,type:'door'}]],
+    [4.53,41.085,7.46,'z',[{at:-5.065,len:2.4,type:'door'}]]
   ];
   ANNEX_WALLS.forEach(([x,z,len,axis,gaps])=>annexWall(x,z,len,axis,gaps));
-  [[-15.72,45,2.8],[-6.32,45,2.8],[13.41,45,2.8]].forEach(([x,z,len])=>annexDoubleDoorX(x,z,len));
-  // portes (bois, simples)
-  [[-1.14,26,2.4,'z'],[3.3,25.94,2.4,'z'],[3.32,32.88,2.4,'z'],[8.16,33.03,2.4,'z'],[-6.48,26.35,2.4,'z'],
-   [-6.5,30.32,2.4,'z'],[-1.12,34.33,2.4,'z'],[1.07,37.46,2.4,'x'],[-21,37,2.4,'z'],[-14.08,24.07,2.4,'x'],[15.15,31.35,2.4,'z']
+  [[-16.41,45.01,3.01],[-8.23,45.02,3.01],[15.23,44.95,2.8]].forEach(([x,z,len])=>annexDoubleDoorX(x,z,len));
+  // sortie de secours (mur est de l'aile, vers le jardin)
+  annexDoor(20,48,3,'z');
+  // portes FERMÉES (bois)
+  [[3.3,26.15,2.4,'z'],[-6.48,26.35,2.4,'z'],[-6.5,30.32,2.4,'z'],[1.07,37.46,2.4,'x'],[15.15,31.35,2.4,'z'],[4.54,36.02,2.4,'z']
   ].forEach(([x,z,len,axis])=>annexDoor(x,z,len,axis));
+  // portes OUVERTES (vantail plaqué contre le mur, sens/gond selon flip/flipEnd)
+  [[-1.15,26.01,2.4,'z',true,false],[3.3,32.94,2.4,'z',false,true],[-1.11,34.29,2.4,'z',true,false],
+   [12.88,24.02,2.4,'x',false,false],[12.55,34.71,2.4,'x',false,false],[-14.61,24.08,2.4,'x',false,true],[8.19,33.17,2.4,'z',false,true]
+  ].forEach(([x,z,len,axis,flip,flipEnd])=>annexDoorOpen(x,z,len,axis,flip,flipEnd));
   // plaques des pièces
-  [["WC Femmes",-6.72,24.3],["Local informatique",1.12,37.64],["WC PMR",7.24,24.3],["WC Homme",7.175,29.2],
-   ["Chaufferie / Gaz",7.67,34.9],["Salle de repos",17.575,24.3],["Salle de formation",15.41,34.9]
+  [["WC Femmes",-6.745,24.3],["Vestiaire",-6.735,32.3],["Cuisine",-16.69,24.4],["Cuisine",-12.25,41.5],
+   ["Local informatique",1.12,37.7],["WC PMR",7.24,24.4],["WC Homme",7.175,29.2],
+   ["Chaufferie / Gaz",7.635,34.9],["Salle de repos",17.575,24.4],["Salle de formation",15.41,34.9]
   ].forEach(([label,x,z])=>signPlane(label,x,2.9,z,0,2.0,"#1864ab"));
   // sanitaires
-  [[-2.85,31.66,0],[5.92,29.4,0],[5.9,28.53,0]].forEach(([x,z,ry])=>lavaboFn(x,z,ry));
-  [[9.7,29.46,90],[-11.92,30.05,0],[-12.02,25.88,0]].forEach(([x,z,ry])=>wcFn(x,z,ry));
-  [[5.9,29.1,0],[5.9,28.92,0],[-2.89,31.99,0]].forEach(([x,z,ry])=>miroirFn(x,z,ry));
+  [[-2.88,31.57,180],[5.92,29.4,0],[5.93,28.53,180],[-20.54,31.98,270]].forEach(([x,z,ry])=>lavaboFn(x,z,ry));
+  [[9.7,29.46,0],[10.53,25.29,90],[-11.81,26.09,270],[-11.83,30.18,270]].forEach(([x,z,ry])=>wcFn(x,z,ry));
+  [[5.9,29.1,0],[5.9,28.92,180],[-2.89,31.99,180]].forEach(([x,z,ry])=>miroirFn(x,z,ry));
+  // vestiaire : casiers
+  [[-9.09,32.6,0],[-10.18,32.58,0],[-7.95,32.61,0],[-6.81,32.62,0],[-5.67,32.67,0],
+   [-11.67,36.93,180],[-10.57,36.94,180],[-9.43,36.95,180],[-8.26,36.96,180],[-7.12,36.97,180],
+   [-5.98,36.95,180],[-4.84,36.96,180],[-3.7,36.94,180],[-2.56,36.95,180]
+  ].forEach(([x,z,ry])=>casierFn(x,z,ry,1,0.7));
+  // cuisine : plans de travail, frigos, distributeurs, micro-ondes
+  [[-20.55,28.37,270,5.2],[-20.67,41.23,270],[-20.55,34.95,270,3.9]].forEach(([x,z,ry,w])=>plandetravailFn(x,z,ry,w));
+  [[-20.55,24.92,270],[-20.45,43.58,270]].forEach(([x,z,ry])=>frigoFn(x,z,ry));
+  distribBoissonFn(-20.45,39.25,270); distribCafeFn(-20.41,37.94,270);
+  [[-20.71,27.01,270],[-20.71,26.31,270],[-20.73,41.35,270]].forEach(([x,z,ry])=>microondeFn(x,z,ry));
+  // tables/chaises (cuisine + salle de formation + terrasse jardin)
+  [[-12.83,42.55,180,2,0.8],[15.1,37.3,0,2.9],[-10.69,42.56,180,2,0.8],[-13.88,28.16,90,2,0.8],[-13.88,31.2,90,2,0.8],
+   [15.16,42.51,180,2.9],[17.1,38.39,90,2.9],[17.15,41.47,90,2.9],[-7.5,52.51,180,2,0.8],[-5.36,52.52,180,2,0.8],[6.56,48.87,90,2.3]
+  ].forEach(([x,z,ry,w,d])=>tableFn(x,z,ry,w,d));
+  [[-11.5,43.5,180],[-10.5,43.5,180],[-10.5,41.5,0],[-11.5,41.5,0],[-12.5,41.5,0],[-13.5,41.5,0],
+   [-12.5,43.5,180],[-13.5,43.5,180],[-12.82,27.81,90],[-15.14,27.76,270],[-15.14,31.76,270],[-15.15,30.96,270],
+   [-12.79,28.62,90],[-15.14,28.61,270],[-12.82,30.89,90],[-12.82,31.84,90],[14.31,43.19,180],[15.73,43.23,180],
+   [17.05,43.24,180],[17.87,37.59,90],[17.02,36.47,0],[15.75,36.47,0],[14.28,36.45,0],[17.87,39.01,90],[17.9,40.53,90],[17.9,42.08,90],
+   [-8.06,51.35,0],[-4.01,52.52,90],[-7.06,51.38,0],[-6.21,51.38,0],[-5.3,51.35,0],[-5.39,53.75,180],[-6.24,53.79,180],
+   [-7.12,53.71,180],[-7.97,53.69,180],[-9.35,52.5,270]
+  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry));
+  buildTable(-5.8,39.6); buildTable(-15.4,50.89); // tables rondes (cuisine + terrasse)
+  tvFn(10.99,39.76,90,3.4);
+  canapeFn(19.19,28.44,90);
+  extinguisher(-0.95,29.45); // cuisine
+  // terrasse jardin : pergola, fauteuils, arbres
+  pergolaFn(6.64,48.27,0,5.3,6);
+  [[4.62,48.24,270],[6.58,46.21,0],[8.38,48.3,90],[4.68,49.68,270],[8.43,49.63,90]].forEach(([x,z,ry])=>fauteuilJardinFn(x,z,ry));
+  [[-18.26,52.96],[17.56,52.1],[18.09,53.38],[15.72,53.17],[0.22,54.25],[2.77,54.26],[5.32,54.38],
+   [-2.07,46.48],[0.37,46.49],[2.7,46.5],[10.66,46.51],[-10,48],[10,52],[-15,53]
+  ].forEach(p=>tree(p[0],p[1]));
 }
 function buildGardeCorps(){
   // 1 SEUL garde-corps, à GAUCHE du passage (à droite l'open space va jusqu'au passage)
@@ -1941,14 +2107,13 @@ function buildParking(){
 }
 let evacGroup=null;
 function buildEvacArrows(){
-  // flèches d'évacuation au sol : sortie de secours (22,-14) -> point de rassemblement
+  // flèches d'évacuation au sol : sortie de secours (22,-14) -> est -> plein sud le long du parking -> point de rassemblement
   evacGroup=new THREE.Group();
   const mat=new THREE.MeshBasicMaterial({map:ARROW_TEX,transparent:true});
-  for(let x=24;x<=ASSEMBLY.x-2;x+=2){
-    const a=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.5),mat);
-    a.rotation.x=-Math.PI/2;a.rotation.z=-Math.PI/2; // pointe vers +x (est)
-    a.position.set(x,0.05,-14);evacGroup.add(a);
-  }
+  const addArrow=(x,z,rz)=>{const a=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.5),mat);a.rotation.x=-Math.PI/2;a.rotation.z=rz;a.position.set(x,0.05,z);evacGroup.add(a);};
+  for(let x=24;x<=28;x+=2) addArrow(x,-14,-Math.PI/2);                 // vers +x (est), sortie du bâtiment
+  for(let z=-12;z<=ASSEMBLY.z-3;z+=2.2) addArrow(28,z,0);              // vers +z (sud), le long du parking
+  for(let x=28;x>=ASSEMBLY.x+1;x-=2) addArrow(x,ASSEMBLY.z,Math.PI/2); // vers -x (ouest), dernier virage
   evacGroup.visible=false;scene.add(evacGroup);
 }
 

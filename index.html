@@ -479,6 +479,19 @@ const fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
 const move={f:false,b:false,l:false,r:false};
 const vel=new THREE.Vector3(),dirv=new THREE.Vector3();
 let mouseNX=0,mouseNY=0;
+let lookVX=0,lookVY=0; // vitesse angulaire du regard, amortie (inertie caméra)
+// tous les canvas 2D sont peints en sRGB : on marque chaque CanvasTexture en sRGBEncoding
+// pour que le pipeline couleur (outputEncoding sRGB + ACES) ne les délave pas
+const _CanvasTexture=THREE.CanvasTexture;
+THREE.CanvasTexture=class extends _CanvasTexture{constructor(...a){super(...a);this.encoding=THREE.sRGBEncoding;}};
+// verre "premium" partagé (cloisons vitrées, portes, fenêtres) : MeshPhysicalMaterial avec
+// transmission/réfraction au lieu d'un simple MeshStandardMaterial semi-transparent
+function premiumGlass(color,opacity,extra){
+  return new THREE.MeshPhysicalMaterial(Object.assign({
+    color,transparent:true,opacity,roughness:0.1,metalness:0.05,
+    transmission:0.9,ior:1.5,thickness:0.2,side:THREE.DoubleSide
+  },extra||{}));
+}
 let activeHotspot=null,started=false,collapsedRef=null;
 let lookPaused=false; // Échap coupe le regard souris ; un clic dans la fenêtre le réactive
 let clockLedTex=null,lastClockDraw=-999; // horloge numérique (bandeau LED)
@@ -780,9 +793,10 @@ function buildWorld(){
   // near/far resserrés sur l'étendue réelle de la scène (WORLD x[-26,40] z[-28,60] + voies ferrées ~x=60) :
   // l'ancien couple 0.1/300 donnait un ratio far/near de 3000, ce qui écrase la précision du depth buffer
   // sur les plans éloignés et provoque du Z-fighting (scintillement) entre surfaces coplanaires proches
-  // (allèges de fenêtres, linteaux de porte, etc.). 0.2/150 (ratio 750) + logarithmicDepthBuffer ci-dessous
-  // réduisent ce scintillement sur toute la profondeur de scène, y compris au loin (voies ferrées, parking).
-  camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.2,150);
+  // near=0.5/far=600 (ratio 1200) : near assez grand pour ne pas ruiner la précision du depth buffer sur les
+  // surfaces coplanaires proches (murs/cloisons), far largement suffisant pour ce bâtiment + parking + jardin.
+  // Couplé au logarithmicDepthBuffer du renderer ci-dessous, ça élimine le scintillement sur toute la profondeur de scène.
+  camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.5,600);
   camera.rotation.order='YXZ'; // yaw puis pitch, sans roll (regard souris sans pointer lock)
   camera.position.set(27,2.6,22); // DEHORS, devant la porte d'accès (est) — on entre par badgeage
   camera.rotation.set(0,Math.PI/2,0); // regarde vers -x : face à la porte
@@ -793,7 +807,10 @@ function buildWorld(){
   renderer=new THREE.WebGLRenderer({antialias:true,logarithmicDepthBuffer:true});
   renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap; // ombres douces (premium)
-  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.18; // rendu filmique
+  renderer.outputEncoding=THREE.sRGBEncoding; // gestion moderne des couleurs (r128) : conversion linéaire -> sRGB en sortie
+  // exposition ramenée de 1.18 à 0.95 : la conversion sRGB en sortie éclaircit déjà les tons moyens,
+  // sans cette compensation la scène serait surexposée par rapport au rendu validé
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.95; // rendu filmique
   document.body.appendChild(renderer.domElement);
 
   scene.add(new THREE.HemisphereLight(0xeef2f8,0x6b6656,0.5)); // éclairage intérieur plus contrasté
@@ -841,7 +858,7 @@ function buildWorld(){
   // mur sud : entièrement géré par ANNEX_WALLS (buildServiceRoom) avec ses portes/fenêtres — pas de mur plein ici
   // --- murs est/ouest avec fenêtres TRAVERSANTES (vrais trous, visibles depuis l'extérieur) ---
   const fillMat=new THREE.MeshStandardMaterial({color:0xe2d8c6,roughness:1,side:THREE.DoubleSide}); // remplissage beige du mur
-  const winGlass=new THREE.MeshStandardMaterial({color:0xcfe6f6,emissive:0xbcd9ef,emissiveIntensity:.12,roughness:.06,metalness:.1,transparent:true,opacity:.32,side:THREE.DoubleSide});
+  const winGlass=premiumGlass(0xcfe6f6,.32,{emissive:0xbcd9ef,emissiveIntensity:.12});
   const winFrame=new THREE.MeshStandardMaterial({color:0xe9edf2,roughness:.5,metalness:.3});
   const addWin=(X,h)=>{ // vitrage + cadre DANS le trou (traverse l'épaisseur du mur)
     const w=h.z1-h.z0,ht=h.y1-h.y0,cz=(h.z0+h.z1)/2,cy=(h.y0+h.y1)/2,dv=h.divV||0;
@@ -1170,7 +1187,7 @@ function glassBox(minX,maxX,minZ,maxZ,name,doorSide,glazedExtra,skip,cuts){
   // glazedExtra : côtés vitrés EN PLUS de la porte ('x-','x+','z-','z+') ; skip : côtés non dessinés (mitoyenneté)
   // (les PORTES des bureaux sont désormais posées séparément via buildOfficeDoors)
   const H=ROOM.h, base=1.6; // cloison de bureau ; partie basse opaque remontée (éditeur)
-  const glass=new THREE.MeshStandardMaterial({color:0xaec4c9,transparent:true,opacity:.5,roughness:.08,metalness:.15,side:THREE.DoubleSide});
+  const glass=premiumGlass(0xaec4c9,.5);
   const dark=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
   const panelMat=new THREE.MeshStandardMaterial({color:0xb7bbc2,roughness:.7,metalness:.2,side:THREE.DoubleSide});
   const wood=new THREE.MeshStandardMaterial({color:0xc89a5e,roughness:.7});
@@ -1189,7 +1206,10 @@ function glassBox(minX,maxX,minZ,maxZ,name,doorSide,glazedExtra,skip,cuts){
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=ry;scene.add(g);
     const add=(m,px,py,pz)=>{m.position.set(px,py,pz||0.02);g.add(m);};
     if(!glazed){                                                                           // mur PLEIN (mitoyen / ne donne pas sur la salle)
-      add(new THREE.Mesh(new THREE.PlaneGeometry(len,H),solidMat),0,H/2,0);
+      // décalage -0.03 (au lieu de 0) : évite que ce mur ne tombe pile sur la cloison couloir/open space (z=21,
+      // séparée de ~0.02-0.03 seulement) — un pz=0 littéral serait de toute façon annulé par le fallback "pz||0.02"
+      // de add() ci-dessus (0 est falsy en JS), ce qui collait ce mur À 0.02 PRÈS de la cloison voisine -> scintillement.
+      add(new THREE.Mesh(new THREE.PlaneGeometry(len,H),solidMat),0,H/2,-0.03);
       return;
     }
     // mur VITRÉ — dessiné en MORCEAUX autour des ouvertures (cuts). Coords mur -> local.
@@ -1287,7 +1307,7 @@ function buildSecoursDoor(p){
   const frameMat=new THREE.MeshStandardMaterial({color:0x70788a,metalness:.55,roughness:.45});
   const leafMat =new THREE.MeshStandardMaterial({color:0xe2e7ee,metalness:.3,roughness:.5});
   const barMat  =new THREE.MeshStandardMaterial({color:0x1faa59,metalness:.3,roughness:.4,emissive:0x0b3a20,emissiveIntensity:.35});
-  const glassMat=new THREE.MeshStandardMaterial({color:0xbfe3ff,transparent:true,opacity:.4,roughness:.1,metalness:.2,side:THREE.DoubleSide});
+  const glassMat=premiumGlass(0xbfe3ff,.25);
   const fill    =new THREE.MeshStandardMaterial({color:0xe2d8c6,roughness:1,side:THREE.DoubleSide});
   const F=-Math.PI/2; // regarde l'intérieur (-x)
   // remplissage beige de l'ouverture, de part et d'autre de la porte simple (+ colliders)
@@ -1310,14 +1330,16 @@ function buildSecoursDoor(p){
   const tex=exitTex();
   const bY=(doorH+H)/2; // centré sur l'imposte verte
   const box=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.55,1.4),new THREE.MeshBasicMaterial({color:0x0a8a3f}));box.position.set(x-0.06,bY,cz);scene.add(box);
-  const f1=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.55),new THREE.MeshBasicMaterial({map:tex,transparent:true}));f1.rotation.y=F;f1.position.set(x-0.09,bY,cz);scene.add(f1);
+  // x-0.10 (au lieu de x-0.09) : la face avant du boîtier (0.06 de large, centré sur x-0.06) est exactement à
+  // x-0.09 -> le pictogramme y était plaqué pile dessus (doublon strict) -> léger décalage pour le détacher.
+  const f1=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.55),new THREE.MeshBasicMaterial({map:tex,transparent:true}));f1.rotation.y=F;f1.position.set(x-0.10,bY,cz);scene.add(f1);
   // éclairage de sécurité vert (BAES) — pas de tapis au sol
   const gl=new THREE.PointLight(0x39d98a,0.9,16);gl.position.set(x-1.6,3.7,cz);scene.add(gl);
 }
 function buildAccessDoor(p,horiz,inward){
   // porte DOUBLE VITRÉE à badge (entrée, éditeur) — vantaux BATTANTS (manuels), ouverture par badgeage.
   // Mur de raccord (z=21.01→24) ; centre de la porte = p.z (22.505), demi-largeur calculée pour rejoindre les jambages.
-  const glass=new THREE.MeshStandardMaterial({color:0xbfe3ff,transparent:true,opacity:.30,roughness:.04,metalness:.2,side:THREE.DoubleSide});
+  const glass=premiumGlass(0xbfe3ff,.3);
   const frame=new THREE.MeshStandardMaterial({color:0x47506a,metalness:.4,roughness:.5});
   const z0=21.02, z1=23.99, leafW=(z1-z0)/2;                // jambage sud (raccord couloir) / nord (mur sud bâtiment)
   const makeLeaf=(hingeZ,dir)=>{ // dir=+1 -> la feuille s'étend vers +z, -1 vers -z
@@ -1446,7 +1468,7 @@ function buildOfficeDoors(){
   // Hauteur jusqu'à la barre horizontale haute du mur vitré (H-1.0) ; au-dessus = vide jusqu'au plafond.
   const woodDoor=new THREE.MeshStandardMaterial({color:0xddb98a,roughness:.55});
   const dark=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
-  const aboveGlass=new THREE.MeshStandardMaterial({color:0xaec4c9,transparent:true,opacity:.5,roughness:.08,metalness:.15,side:THREE.DoubleSide}); // vitré, comme le reste de la cloison (pas de panneau opaque au-dessus de la porte)
+  const aboveGlass=premiumGlass(0xaec4c9,.5); // vitré, comme le reste de la cloison (pas de panneau opaque au-dessus de la porte)
   const mk=(geo,mat,px,py,pz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(px,py,pz);return m;};
   const door=(x,z,len,axis,leaf)=>{
     const g=new THREE.Group();g.position.set(x,0,z);if(axis==='x')g.rotation.y=Math.PI/2;scene.add(g);
@@ -1476,7 +1498,7 @@ function buildOfficeDoors(){
 // même style que les bureaux, mais s'arrêtant au niveau du haut d'une porte (ouvert au-dessus, pas de plafond fermé).
 const LOWWALLS=[[2.51,-19.49,4.6,'x'],[0.18,-21.74,4.5,'z']];
 function buildLowWalls(){
-  const glass=new THREE.MeshStandardMaterial({color:0xaec4c9,transparent:true,opacity:.5,roughness:.08,metalness:.15,side:THREE.DoubleSide});
+  const glass=premiumGlass(0xaec4c9,.5);
   const dark=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
   const panelMat=new THREE.MeshStandardMaterial({color:0xb7bbc2,roughness:.7,metalness:.2,side:THREE.DoubleSide});
   const h=ROOM.h-1.0, base=1.6; // même hauteur que les portes des bureaux ; même proportion panneau/verre que les cloisons
@@ -1520,12 +1542,18 @@ function buildSideAnnexes(){
     const m=new THREE.Mesh(new THREE.PlaneGeometry(z1-z0,H),wallMat);m.position.set(x,H/2,(z0+z1)/2);m.rotation.y=Math.PI/2;scene.add(m);
     COLLIDERS.push({minX:x-0.1,maxX:x+0.1,minZ:z0,maxZ:z1,type:'wall'});
   };
-  wallX(17.31,21.99,21.01);    // raccord est : du mur de la porte badge (x=17.32) jusqu'au coin est
-  wallZ(20.05,24,35.99);       // mur extérieur est, prolongé vers le sud (annexe/auvent)
-  wallX(-21.98,-18.51,21.02);  // raccord ouest : du mur ouest jusqu'à la porte vitrée double (x=-18.5)
+  // décalage -0.03 en z : ces deux raccords couvrent EXACTEMENT les mêmes coordonnées que les entrées
+  // [19.65,21.01,...] et [-20.245,21.02,...] de ANNEX_WALLS (dessinées par annexWall() plus bas) -> sans ce
+  // décalage les deux murs sont parfaitement coplanaires (doublon strict) et scintillent violemment.
+  wallX(17.31,21.99,21.01-0.03);    // raccord est : du mur de la porte badge (x=17.32) jusqu'au coin est
+  // décalage -0.03 en x : ce mur plein (sans fenêtres) couvre exactement la même ligne (x=20.05) que les
+  // segments pleins de l'entrée [20.05,39.55,31,'z',...] de ANNEX_WALLS un peu plus bas (mur AVEC fenêtres) ->
+  // doublon strict entre les fenêtres -> scintillement sur les pans pleins du mur, juste à côté de l'entrée.
+  wallZ(20.05-0.03,24,35.99);  // mur extérieur est, prolongé vers le sud (annexe/auvent)
+  wallX(-21.98,-18.51,21.02-0.03);  // raccord ouest : du mur ouest jusqu'à la porte vitrée double (x=-18.5)
 
   // ----- porte vitrée double (sans badge), côté ouest, x=-18.5, z 21.1..23.9 -----
-  const glass=new THREE.MeshStandardMaterial({color:0xbfe3ff,transparent:true,opacity:.3,roughness:.04,metalness:.2,side:THREE.DoubleSide});
+  const glass=premiumGlass(0xbfe3ff,.3);
   const frame=new THREE.MeshStandardMaterial({color:0x47506a,metalness:.4,roughness:.5});
   const dx=-18.5, dz0=21.1, dz1=23.9, leafW=(dz1-dz0)/2, dcz=(dz0+dz1)/2;
   [[dz0,+1],[dz1,-1]].forEach(([hingeZ,dir])=>{
@@ -1537,7 +1565,7 @@ function buildSideAnnexes(){
   const lint=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.16,dz1-dz0+0.2),frame);lint.position.set(dx,4.25,dcz);scene.add(lint);
 }
 function buildPanelWalls(){
-  const glass=new THREE.MeshStandardMaterial({color:0xaec4c9,transparent:true,opacity:.5,roughness:.08,metalness:.15,side:THREE.DoubleSide});
+  const glass=premiumGlass(0xaec4c9,.5);
   const dark=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
   const panelMat=new THREE.MeshStandardMaterial({color:0xb7bbc2,roughness:.7,metalness:.2,side:THREE.DoubleSide});
   const H=ROOM.h, base=1.6;
@@ -1644,11 +1672,7 @@ function buildCorridor(){
   const poster=(tex,x)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(0.85,1.2),new THREE.MeshBasicMaterial({map:tex}));m.position.set(x,2.45,SALLE_SOUTH-0.06);scene.add(m);};
   poster(posterTex("C'EST À VOUS","#1c5bbf"),x1+1.4);
   poster(posterTex("CONCOURS","#cd0037"),x1+2.6);
-  // seuil : tapis métal sombre + bandes adhésives jaune/noir (comme la rampe d'accès)
-  const seuil=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,1.1),new THREE.MeshStandardMaterial({color:0x3a3f47,roughness:.85}));
-  seuil.rotation.x=-Math.PI/2;seuil.position.set(cx,0.03,SALLE_SOUTH);scene.add(seuil);
-  const haz=new THREE.MeshBasicMaterial({map:repeatTex(hazardTex(),(x1-x0)/0.3,1)});
-  [SALLE_SOUTH-0.55,SALLE_SOUTH+0.55].forEach(z=>{const t=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,0.16),haz);t.rotation.x=-Math.PI/2;t.position.set(cx,0.04,z);scene.add(t);});
+  // (seuil gris + bandes jaune/noir retiré d'ici — remplacé par la zone du passage, voir buildGardeCorps())
   // plinthe sombre au pied du mur sud pour souligner le couloir (le sol reste carrelé)
   const c=new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w-0.4,0.25),new THREE.MeshStandardMaterial({color:0x9aa0ac,roughness:.8}));
   c.position.set(0,0.13,ROOM.d/2-0.05);c.rotation.y=Math.PI;scene.add(c);
@@ -1667,7 +1691,7 @@ function buildServiceRoom(){
     tex.repeat.set(Math.max(1,Math.round(w/5)),Math.max(1,Math.round(h/5)));
     return new THREE.MeshStandardMaterial({map:tex,color:0xe2d8c6,roughness:1,side:THREE.DoubleSide});
   };
-  const glassMat=new THREE.MeshStandardMaterial({color:0xcfe6f6,emissive:0xbcd9ef,emissiveIntensity:.12,roughness:.06,metalness:.1,transparent:true,opacity:.32,side:THREE.DoubleSide});
+  const glassMat=premiumGlass(0xcfe6f6,.25,{emissive:0xbcd9ef,emissiveIntensity:.12});
   const woodDoor=new THREE.MeshStandardMaterial({color:0xddb98a,roughness:.55});
   const darkFrame=new THREE.MeshStandardMaterial({color:0x24272d,metalness:.45,roughness:.5});
   // mur avec portes (fermées, gaps.type='door') et fenêtres pleine hauteur (gaps.type='window', vitrées + collider)
@@ -1737,10 +1761,13 @@ function buildServiceRoom(){
     else annexDoor(x+s*len/2, z-e2*h, len, 'x');
   };
   const annexDoubleDoorX=(cx,cz,len)=>{
-    const glass=new THREE.MeshStandardMaterial({color:0xbfe3ff,transparent:true,opacity:.3,roughness:.04,metalness:.2,side:THREE.DoubleSide});
+    const glass=premiumGlass(0xbfe3ff,.3);
     const frame=new THREE.MeshStandardMaterial({color:0x47506a,metalness:.4,roughness:.5});
     const leafW=len/2;
-    [[cx-leafW/2,+1],[cx+leafW/2,-1]].forEach(([hx,dir])=>{
+    // pivots placés aux bords extérieurs (cx∓leafW, comme les montants de cadre ci-dessous), PAS aux quarts
+    // (cx∓leafW/2) : avec les quarts, l'offset local (dir*leafW/2) ramenait les deux vantaux au même point
+    // cx -> panneaux de verre parfaitement superposés (doublon strict, scintillement violent sur 3 portes).
+    [[cx-leafW,+1],[cx+leafW,-1]].forEach(([hx,dir])=>{
       const pivot=new THREE.Group();pivot.position.set(hx,2.1,cz);scene.add(pivot);
       const g=new THREE.Mesh(new THREE.PlaneGeometry(leafW,4.2),glass);g.position.set(dir*leafW/2,0,0);pivot.add(g);
     });
@@ -1964,7 +1991,7 @@ function buildServiceRoom(){
    [18.45,43.75,180],[17.3,43.8,180],[15.65,43.9,180],[14.05,43.91,180],
    [-12.73,27.23,270],[-12.74,28.84,270],[-15.06,28.88,90],[-15.09,27.32,90],[-12.73,30.79,270],[-12.74,32.37,270],[-15.12,30.67,90],[-15.13,32.41,90],
    [-14.11,41.75,0],[-12.52,41.75,0],[-10.78,41.77,0],[-9.24,41.74,0],[-7.9,43.16,270],[-8.89,44.33,180],[-10.59,44.33,180],[-12.49,44.28,180],[-13.99,44.23,180],
-   [-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,270],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,270]
+   [-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,270]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.6,0.6));
   // (les 2 tables rondes cuisine/terrasse ont été retirées du plan — remplacées par les tables rectangulaires ci-dessus)
   tvFn(10.99,39.76,90,3.4,2);
@@ -1972,10 +1999,13 @@ function buildServiceRoom(){
   extinguisher(-0.95,29.45); // cuisine
   // terrasse jardin : pergola, fauteuils, arbres
   pergolaFn(6.64,48.27,0,5.3,6);
-  [[4.62,48.24,270],[8.38,48.3,90],[4.68,49.68,270],[8.43,49.63,90]].forEach(([x,z,ry])=>fauteuilJardinFn(x,z,ry));
+  // rotations +180° par rapport au plan : telles quelles elles pointaient pile à l'opposé du centre de la pergola
+  [[4.62,48.24,90],[8.38,48.3,270],[4.68,49.68,90],[8.43,49.63,270]].forEach(([x,z,ry])=>fauteuilJardinFn(x,z,ry));
   fauteuilJardinFn(6.58,46.21,0,4.1,1.1); // banc de jardin agrandi (éditeur)
   [[-18.26,52.96],[17.56,52.1],[18.09,53.38],[15.72,53.17],[0.22,54.25],[2.77,54.26],[5.32,54.33]
   ].forEach(p=>tree(p[0],p[1])); // uniquement les arbres présents sur le plan (éditeur)
+  [[1.5,53.5],[-3.5,45.5],[14.5,53.5],[19.5,51],[-1.5,53.5]
+  ].forEach(p=>palmier(p[0],p[1])); // palmiers du jardin (éditeur)
 }
 function buildGardeCorps(){
   // 1 SEUL garde-corps, à GAUCHE du passage (à droite l'open space va jusqu'au passage)
@@ -1989,6 +2019,18 @@ function buildGardeCorps(){
     COLLIDERS.push({minX:x-0.2,maxX:x+0.2,minZ:SALLE_SOUTH-len,maxZ:SALLE_SOUTH,type:'rail'});
   };
   rail(HALL_DOOR.x1); // un seul côté du passage
+  // sol du passage (devant la porte open space, entre le garde-corps et le mur) : dalle grise + bande
+  // adhésive jaune/noir tout autour, même emprise que le garde-corps (7 m, jusqu'à la porte z=21)
+  {
+    const x0=HALL_DOOR.x0, x1=HALL_DOOR.x1, z0=SALLE_SOUTH-len, z1=SALLE_SOUTH;
+    const aw=x1-x0, ad=z1-z0, acx=(x0+x1)/2, acz=(z0+z1)/2, bw=0.16;
+    const grey=new THREE.Mesh(new THREE.PlaneGeometry(aw,ad),new THREE.MeshStandardMaterial({color:0x3a3f47,roughness:.85}));
+    grey.rotation.x=-Math.PI/2;grey.position.set(acx,0.03,acz);scene.add(grey);
+    const hazNS=new THREE.MeshBasicMaterial({map:repeatTex(hazardTex(),aw/0.3,1)});   // bandes nord/sud, bandes le long de X
+    const hazEW=new THREE.MeshBasicMaterial({map:repeatTex(hazardTex(),1,ad/0.3)});   // bandes est/ouest, le long de Z
+    [z0,z1].forEach(z=>{const t=new THREE.Mesh(new THREE.PlaneGeometry(aw,bw),hazNS);t.rotation.x=-Math.PI/2;t.position.set(acx,0.04,z);scene.add(t);});
+    [x0,x1].forEach(x=>{const t=new THREE.Mesh(new THREE.PlaneGeometry(bw,ad),hazEW);t.rotation.x=-Math.PI/2;t.position.set(x,0.04,acz);scene.add(t);});
+  }
 }
 function couch(x,z,ry,len=2.0){ // canapé rouge (len = longueur)
   const g=new THREE.Group();
@@ -2074,6 +2116,19 @@ function bush(x,z){ // buisson bas (éditeur), sans tronc, plus petit qu'un arbr
   const f=new THREE.Mesh(new THREE.SphereGeometry(0.55,10,8),new THREE.MeshStandardMaterial({color:0x4f8a3f,roughness:.95}));
   f.position.set(x,0.42,z);f.scale.y=0.72;scene.add(f);
 }
+function palmier(x,z){ // palmier (éditeur, jardin) : tronc fin + palmes en éventail, distinct du feuillage rond de tree()
+  const trunkMat=new THREE.MeshStandardMaterial({color:0x8a6a3a,roughness:.9});
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.22,3.2,8),trunkMat);
+  trunk.position.set(x,1.6,z);trunk.rotation.z=0.05;scene.add(trunk); // léger fléchissement du tronc
+  const frondMat=new THREE.MeshStandardMaterial({color:0x5a9c3f,roughness:.85,side:THREE.DoubleSide});
+  const n=7;
+  for(let i=0;i<n;i++){
+    const spin=new THREE.Group();spin.position.set(x,3.2,z);spin.rotation.y=i*(Math.PI*2/n);scene.add(spin);
+    const frond=new THREE.Mesh(new THREE.ConeGeometry(0.22,1.9,4),frondMat);
+    frond.rotation.x=Math.PI*0.4;frond.position.z=0.7;frond.scale.x=0.22; // aplatie + inclinée vers l'extérieur/le bas
+    spin.add(frond);
+  }
+}
 // Places de parking le long du bâtiment (x≈28) : positions/rotations reprises telles quelles de l'éditeur de plan.
 // rot (°) est appliqué directement en g.rotation.y (même convention que placeGrandPoste/armoire, déjà alignée sur l'éditeur).
 const PARKING_PMR=[[27.94,17.83,270,4,5.8],[27.94,13.73,270,4,5.8],[27.95,27.06,270,4,5.8],[27.95,31.22,270,4,5.8]];
@@ -2088,8 +2143,13 @@ const BUISSONS=[[-13,46],[-12.25,46.82],[-11.5,46],[2.18,45.88],[1.37,47.07],[11
   [-20,46],[-20,47.5],[-20,54],[24.5,25.5],[24.5,26.5],[24.5,28]];
 function buildParking(){
   // bitume AGRANDI côté est (parking + voie jusqu'au point de rassemblement)
+  // y=-0.03 (au lieu de 0.0) : le sol carrelé intérieur ("floor", x=-22..22, z=-24..24) déborde du bâtiment
+  // jusqu'à x=22, largement au-delà du mur est réel -> il coïncide avec cet asphalte (x=17..63) à hauteur y=0
+  // sur toute la bande x=17..22, visible depuis l'intérieur à travers CHAQUE ouverture du mur est (porte d'accès
+  // ET sortie de secours) -> scintillement du sol. Micro-décalage vers le bas (marge confortable, toujours
+  // imperceptible) qui laisse aussi de la place avec le sol extérieur "ext" (y=-0.04) juste en dessous.
   const asph=new THREE.Mesh(new THREE.PlaneGeometry(46,90),new THREE.MeshStandardMaterial({color:0x4a4e55,roughness:1}));
-  asph.rotation.x=-Math.PI/2;asph.position.set(40,0.0,15);asph.receiveShadow=true;scene.add(asph);
+  asph.rotation.x=-Math.PI/2;asph.position.set(40,-0.03,15);asph.receiveShadow=true;scene.add(asph);
   // (hangar supprimé — laisse la vue dégagée sur le train)
   // arbres à l'ouest du bâtiment (uniquement ceux présents sur le plan — les arbres de remplissage
   // du parking [44,-22] etc. sans correspondance dans l'éditeur ont été retirés)
@@ -2333,12 +2393,18 @@ function animate(){
     const deadzone=0.15,lookSpeed=1.3; // sensibilité réduite (était 2.4)
     const ax=Math.abs(mouseNX)>deadzone?Math.sign(mouseNX)*(Math.abs(mouseNX)-deadzone)/(1-deadzone):0;
     const ay=Math.abs(mouseNY)>deadzone?Math.sign(mouseNY)*(Math.abs(mouseNY)-deadzone)/(1-deadzone):0;
-    camera.rotation.y-=ax*lookSpeed*dt;
-    camera.rotation.x=Math.max(-1.15,Math.min(1.15,camera.rotation.x-ay*lookSpeed*dt));
+    // inertie du regard : la vitesse angulaire est amortie (lambda=8 -> ~0.29 s pour atteindre 90 % de la cible)
+    // au lieu de suivre la souris instantanément -> plus de micro-saccades sur les mousemove
+    lookVX=THREE.MathUtils.damp(lookVX,ax,8,dt);
+    lookVY=THREE.MathUtils.damp(lookVY,ay,8,dt);
+    camera.rotation.y-=lookVX*lookSpeed*dt;
+    camera.rotation.x=Math.max(-1.15,Math.min(1.15,camera.rotation.x-lookVY*lookSpeed*dt));
     // déplacement au clavier (ZQSD/flèches), relatif au regard (yaw uniquement, indépendant du pitch)
-    vel.x-=vel.x*8*dt;vel.z-=vel.z*8*dt;
+    // friction exponentielle exacte e^(-k·dt) (k=8) : rigoureusement identique quel que soit le framerate,
+    // contrairement à l'Euler explicite v-=v*8*dt qui divergeait légèrement entre 60 Hz et 144 Hz
+    const fric=Math.exp(-8*dt);vel.x*=fric;vel.z*=fric;
     dirv.z=Number(move.f)-Number(move.b);dirv.x=Number(move.r)-Number(move.l);dirv.normalize();
-    const sp=46;
+    const sp=52; // accélération ; vitesse de croisière = sp/k = 52/8 = 6,5 m/s (était 5,75)
     if(move.f||move.b)vel.z-=dirv.z*sp*dt;
     if(move.l||move.r)vel.x-=dirv.x*sp*dt;
     const yaw=camera.rotation.y,sy=Math.sin(yaw),cy=Math.cos(yaw);

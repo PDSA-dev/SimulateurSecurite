@@ -1432,17 +1432,29 @@ function buildDAE(x,z,dir){
   COLLIDERS.push({minX:x-0.28,maxX:x+0.28,minZ:z-0.25,maxZ:z+0.25,type:'cabinet'});
 }
 // Repères de la mission "données" (étape d'inspection après le QCM initial) : un poste de collègue non
-// sécurisé, repris sur des grands bureaux déjà présents dans l'open space (pas de nouveau mobilier).
+// sécurisé, dans les allées entre les îlots du plateau central (PAS dans Bureau du chef/DPX/ACM : ces
+// 3 zones sont fermées par un collider plein sur toute leur longueur, sans trou réel au niveau des portes
+// -qui ne sont que décoratives- donc inaccessibles). Les 3 points ci-dessous ont été vérifiés par un
+// flood-fill de collision depuis le point d'entrée du joueur : accessibles à pied depuis le plateau ouvert.
 const DONNEES_SPOTS=[
-  {x:-2.7,  z:15.48, reason:"Écran resté déverrouillé, dossier client encore affiché."},
-  {x:-10.04,z:14.46, reason:"Un mot de passe noté sur un post-it collé à l'écran."},
-  {x:16.5,  z:2.5,   reason:"Un document client imprimé oublié sur le bureau."}
+  {x:-9.5,z:-9, reason:"Écran resté déverrouillé, dossier client encore affiché."},
+  {x:8,   z:9,  reason:"Un mot de passe noté sur un post-it collé à l'écran."},
+  {x:2,   z:13, reason:"Un document client imprimé oublié sur le bureau."}
 ];
 function buildDonneesSpots(){
+  // même langage visuel que les hotspots de scénario (anneau au sol + faisceau + icône flottante) pour
+  // qu'un joueur qui sait repérer un hotspot sache aussi repérer ces postes. Groupe caché tant que la
+  // mission données n'a pas démarré (voir closeScenario) ; ré-affiché puis masqué une fois repéré.
+  const col=new THREE.Color(THEMES.donnees.color);
   DONNEES_SPOTS.forEach(s=>{
-    const m=emojiSprite('🔓',0.55);m.position.set(s.x,2.35,s.z);scene.add(m);
-    const pl=new THREE.PointLight(0xff5555,0.5,4);pl.position.set(s.x,2.2,s.z);scene.add(pl);
-    s.marker=m;s.light=pl;
+    const g=new THREE.Group();g.position.set(s.x,0,s.z);g.visible=false;scene.add(g);
+    const ring=new THREE.Mesh(new THREE.RingGeometry(1.0,1.4,40),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.7,side:THREE.DoubleSide}));
+    ring.rotation.x=-Math.PI/2;ring.position.y=0.07;g.add(ring);
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,6,24,1,true),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false}));
+    beam.position.y=3;g.add(beam);
+    const spr=emojiSprite('🔓',1.1);spr.position.y=3.4;g.add(spr);
+    const pl=new THREE.PointLight(0xff5555,0.6,5);pl.position.y=2.2;g.add(pl);
+    s.group=g;s.ring=ring;s.beam=beam;s.spr=spr;s.light=pl;
   });
 }
 function alarmTrigger(x,z){
@@ -2387,6 +2399,10 @@ function drawMap(){
   });
   hotspots.forEach(h=>{if(h.hidden)return;const[mx,mz]=toMap(h.group.position.x,h.group.position.z);
     mctx.beginPath();mctx.arc(mx,mz,4,0,7);mctx.fillStyle=h.resolved?'#39d98a':THEMES[h.data.theme].color;mctx.fill();});
+  if(donneesMission){ // postes non sécurisés pas encore repérés : mêmes points que les hotspots, sur la mini-carte
+    donneesMission.spots.forEach(s=>{if(s.found)return;const[mx,mz]=toMap(s.x,s.z);
+      mctx.beginPath();mctx.arc(mx,mz,4,0,7);mctx.fillStyle=THEMES.donnees.color;mctx.fill();});
+  }
   // extincteurs (ronds rouges) + coupure élec. (étoile)
   mctx.strokeStyle='#ff3b3b';mctx.lineWidth=2;
   EXTINGUISHERS.forEach(e=>{const[mx,mz]=toMap(e.x,e.z);mctx.beginPath();mctx.arc(mx,mz,3.5,0,7);mctx.stroke();});
@@ -2448,6 +2464,14 @@ function animate(){
     const d=camera.position.distanceTo(h.group.position);
     if(d<3.4&&d<best){best=d;activeHotspot=h;}
   });
+  if(donneesMission){ // même animation (flottement + rotation) que les hotspots, pour les repères non trouvés
+    donneesMission.spots.forEach(s=>{
+      if(s.found||!s.group)return;
+      s.spr.position.y=3.4+Math.sin(t*2+s.x)*0.18;
+      s.group.rotation.y=t*0.5;
+      s.ring.material.opacity=0.45+Math.sin(t*3)*0.25;
+    });
+  }
   flames.forEach(h=>{
     if(h.resolved)return;
     h.fireGroup.children.forEach(s=>{const k=0.7+Math.abs(Math.sin(t*6+s.userData.phase))*0.6;
@@ -2459,6 +2483,16 @@ function animate(){
   // mission incendie / évacuation : proximité de la cible courante
   nearMission=false;
   if((fireMission||evacMission||daeMission) && camera.position.distanceTo(missionTargetPos)<3.8) nearMission=true;
+  // mission données : proximité du poste non sécurisé le plus proche (parmi ceux pas encore repérés)
+  if(donneesMission){
+    let best=1e9,cur=null;
+    donneesMission.spots.forEach(s=>{
+      if(s.found)return;
+      const d=Math.hypot(camera.position.x-s.x,camera.position.z-s.z);
+      if(d<best){best=d;cur=s;}
+    });
+    if(cur){donneesMission.current=cur;missionTargetPos.set(cur.x,2.2,cur.z);missionPrompt="Inspecter ce poste";if(best<3.2)nearMission=true;}
+  }
 
   // ----- contrôle d'accès : badge + porte battante -----
   nearReader=false;
@@ -2503,6 +2537,7 @@ function openScenario(h){
   const sc=h.data,th=THEMES[sc.theme];
   if(sc.theme==='incendie') startAlarm(); // l'alarme incendie retentit dès qu'on inspecte la zone (E)
   $("#modal").style.display="flex";
+  if(sc.theme==='cyber'){ renderCyberEmail(h,sc,th); return; } // faux mail cliquable au lieu du QCM texte
   $("#modalBody").innerHTML=`
     <span class="scene-tag" style="background:${th.color}">${th.label}</span>
     <div class="scenario"><span class="ill">${sc.ill}</span>${sc.text}</div>
@@ -2515,9 +2550,47 @@ function openScenario(h){
   $("#choices").querySelectorAll(".choice").forEach(b=>b.onclick=()=>answer(h,+b.dataset.i));
   $("#contBtn").onclick=()=>closeScenario(h);
 }
+// Scénario cyber : mail piégé reconstitué (boîte mail simplifiée) au lieu d'un QCM texte. Les 3 actions
+// cliquables correspondent une à une aux 3 choix existants de sc.choices (mêmes indices, même scoring/feedback
+// via answer(), donc pas de scoring supplémentaire à gérer dans le calcul du max final).
+function renderCyberEmail(h,sc,th){
+  $("#modalBody").innerHTML=`
+    <span class="scene-tag" style="background:${th.color}">${th.label}</span>
+    <div class="q">Que fais-tu face à ce mail ?</div>
+    <div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;margin:10px 0;font-family:Arial,sans-serif">
+      <div style="background:#f1f3f5;padding:8px 12px;display:flex;gap:16px;font-size:12px;color:#495057;border-bottom:1px solid #dee2e6">
+        <span class="cyberAct" data-act="reply" style="cursor:pointer">↩️ Répondre</span>
+        <span class="cyberAct" data-act="forward" style="cursor:pointer">➡️ Transférer</span>
+        <span class="cyberAct" data-act="report" style="cursor:pointer;font-weight:700;color:#c92a2a">🚩 Signaler</span>
+      </div>
+      <div style="padding:14px 16px">
+        <div style="font-size:13px;color:#868e96">De : <b style="color:#c92a2a">support-securite@sncf-secur1ty-login.com</b></div>
+        <div style="font-size:13px;color:#868e96;margin-top:2px">Objet : <b style="color:#1a1a1a">⚠️ Mise à jour sécurité — action requise avant ce soir</b></div>
+        <div style="margin-top:12px;font-size:14px;line-height:1.5">${sc.text}</div>
+        <div class="cyberAct" data-act="link" style="margin-top:14px;display:inline-block;background:#1864ab;color:#fff;padding:9px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">🔗 Confirmer mon mot de passe</div>
+      </div>
+    </div>
+    <div class="feedback" id="fb"></div>
+    <button class="btn full" id="contBtn">Continuer →</button>`;
+  const actToIdx={link:0,report:1,forward:2,reply:2}; // répondre au mail = même risque que le transférer
+  let answered=false;
+  document.querySelectorAll('.cyberAct').forEach(el=>{
+    el.onclick=()=>{
+      if(answered)return;answered=true;
+      document.querySelectorAll('.cyberAct').forEach(x=>x.style.pointerEvents='none');
+      const idx=actToIdx[el.dataset.act];
+      el.style.outline=(sc.choices[idx].ok?"3px solid #1faa59":"3px solid #e03131");
+      el.style.borderRadius="6px";
+      answer(h,idx);
+    };
+  });
+  $("#contBtn").onclick=()=>closeScenario(h);
+}
 function answer(h,idx){
   const sc=h.data,c=sc.choices[idx];
-  $("#choices").querySelectorAll(".choice").forEach((b,k)=>{b.disabled=true;
+  // pas de #choices pour le scénario cyber (mail cliquable, pas de liste de boutons texte) -> on l'ignore
+  const choicesEl=$("#choices");
+  if(choicesEl) choicesEl.querySelectorAll(".choice").forEach((b,k)=>{b.disabled=true;
     if(sc.choices[k].ok)b.classList.add("good");else if(k===idx)b.classList.add("bad");else b.classList.add("dim");});
   if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur(sc.theme);}
   const fb=$("#fb");fb.className="feedback show "+(c.ok?"ok":"ko");
@@ -2550,6 +2623,7 @@ function closeScenario(h){
   // Données : QCM réussi -> mission d'inspection (repérer 3 postes non sécurisés avant le QCM final)
   if(!h.resolved && h.data.theme==='donnees' && h.answeredOk){
     donneesMission={h,spots:DONNEES_SPOTS.map(s=>({...s,found:false})),foundCount:0};
+    donneesMission.spots.forEach(s=>{if(s.group)s.group.visible=true;}); // révèle les repères (anneau+faisceau+icône)
     h.ring.material.color=new THREE.Color(0xf08c00); // orange : mission en cours
     showDonneesMission();
     $("#modal").style.display="none";return;
@@ -2770,7 +2844,7 @@ function showDonneesMission(){
 }
 function advanceDonnees(){
   const s=donneesMission.current;if(!s||s.found)return;
-  s.found=true;if(s.marker)s.marker.visible=false;if(s.light)s.light.visible=false;
+  s.found=true;if(s.group)s.group.visible=false;
   donneesMission.foundCount=(donneesMission.foundCount||0)+1;
   toast("👀 "+s.reason,"warn",2600);
   if(donneesMission.foundCount>=donneesMission.spots.length){
@@ -2866,8 +2940,11 @@ function updateHud(){
   el.style.background=state.safety>66?"linear-gradient(90deg,#1faa59,#7be0a8)":state.safety>33?"linear-gradient(90deg,#f08c00,#ffd166)":"linear-gradient(90deg,#e03131,#ff8787)";
 }
 function endGame(){
-  // le scénario "feu" rapporte 20 points au lieu de 10 (QCM initial + quiz du choix de l'extincteur, étape 3/4)
-  const max=ACTIVE_SCENARIOS.reduce((sum,s)=>sum+(s.theme==='feu'?20:10),0),pct=Math.round(state.score/max*100);
+  // points max par thème selon le nombre de quiz scorés dans la mission :
+  // feu = QCM + choix extincteur (20) ; dae = QCM + numéro d'urgence + utilisation DAE (30) ;
+  // donnees = QCM + QCM final d'inspection (20) ; les autres thèmes n'ont qu'un seul QCM (10).
+  const PTS_BY_THEME={feu:20,dae:30,donnees:20};
+  const max=ACTIVE_SCENARIOS.reduce((sum,s)=>sum+(PTS_BY_THEME[s.theme]||10),0),pct=Math.round(state.score/max*100);
   let color,badge,msg;
   if(pct>=80){color="#1faa59";badge="Référent·e sécurité 🏅";msg="Excellent ! Tu adoptes les bons réflexes et tu protèges l'équipe et les clients.";}
   else if(pct>=50){color="#f08c00";badge="Sur la bonne voie 👍";msg="Pas mal ! Quelques réflexes à consolider pour devenir un vrai relais de sécurité.";}
@@ -2894,6 +2971,7 @@ function key(e,d){
         else if(nearMission&&fireMission) advanceMission();
         else if(nearMission&&evacMission) advanceEvac();
         else if(nearMission&&daeMission) advanceDaeMission();
+        else if(nearMission&&donneesMission) advanceDonnees();
         else if(activeHotspot) openScenario(activeHotspot);
       }
       break;

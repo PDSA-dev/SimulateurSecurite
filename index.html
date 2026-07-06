@@ -505,8 +505,14 @@ let hallLeaves=[],hallDoorOpen=0; // porte vitrée de l'open space (s'ouvre à l
 let fireMission=null,nearMission=false,missionPrompt="",carryingExt=false; // mission incendie multi-étapes
 let daeMission=null,carryingDae=false,collapsedDaeRef=null; // mission DAE multi-étapes (aller chercher -> revenir soigner)
 let evacMission=null; // mission d'évacuation (alarme -> secours -> point de rassemblement)
+let donneesMission=null; // mission données : repérer 3 postes non sécurisés avant le QCM final
 let secoursLock=null; // collider qui verrouille la sortie de secours tant qu'on n'a pas appuyé sur E
 const missionTargetPos=new THREE.Vector3();
+// toast temporaire (réutilise le style de #badgeMsg) : msg, classe ok/warn, durée d'affichage en ms
+function toast(msg,cls,ms){
+  const bm=$("#badgeMsg");bm.className=cls||"";bm.textContent=msg;bm.style.display="block";
+  clearTimeout(bm._toastT);bm._toastT=setTimeout(()=>{bm.style.display="none";},ms||2400);
+}
 
 /* ---------- textures ---------- */
 function emojiSprite(emoji,size=1.7){
@@ -914,6 +920,7 @@ function buildWorld(){
   buildPanelWalls();           // panneaux pleine hauteur (ACM est + ex-Bureau, éditeur)
   buildSideAnnexes();          // murs de raccord sud-est/sud-ouest + porte vitrée double (éditeur)
   buildGrandPostes();          // grands bureaux double écran + agents (éditeur)
+  buildDonneesSpots();         // repères de la mission données (postes non sécurisés à repérer)
   buildCorridorDecor();
   buildElecCutoff();
   ACTIVE_SCENARIOS.forEach(addHotspot);
@@ -1423,6 +1430,20 @@ function buildDAE(x,z,dir){
   const bolt=emojiSprite('⚡',0.22);bolt.position.set(x+0.19*dir,1.56,z);scene.add(bolt);
   signPlane("DAE",x+0.19*dir,2.1,z,dir>0?Math.PI/2:-Math.PI/2,0.75,"#1f9d57");
   COLLIDERS.push({minX:x-0.28,maxX:x+0.28,minZ:z-0.25,maxZ:z+0.25,type:'cabinet'});
+}
+// Repères de la mission "données" (étape d'inspection après le QCM initial) : un poste de collègue non
+// sécurisé, repris sur des grands bureaux déjà présents dans l'open space (pas de nouveau mobilier).
+const DONNEES_SPOTS=[
+  {x:-2.7,  z:15.48, reason:"Écran resté déverrouillé, dossier client encore affiché."},
+  {x:-10.04,z:14.46, reason:"Un mot de passe noté sur un post-it collé à l'écran."},
+  {x:16.5,  z:2.5,   reason:"Un document client imprimé oublié sur le bureau."}
+];
+function buildDonneesSpots(){
+  DONNEES_SPOTS.forEach(s=>{
+    const m=emojiSprite('🔓',0.55);m.position.set(s.x,2.35,s.z);scene.add(m);
+    const pl=new THREE.PointLight(0xff5555,0.5,4);pl.position.set(s.x,2.2,s.z);scene.add(pl);
+    s.marker=m;s.light=pl;
+  });
 }
 function alarmTrigger(x,z){
   // Déclenchement d'alarme (boîtier rouge brise-glace), façade vers le plateau (-z)
@@ -2519,11 +2540,18 @@ function closeScenario(h){
     showMission();
     $("#modal").style.display="none";return;
   }
-  // DAE : QCM réussi -> mission multi-étapes (aller chercher le DAE -> revenir soigner la victime)
+  // DAE : QCM réussi -> mission multi-étapes (quel numéro appeler -> aller chercher le DAE -> soigner)
   if(!h.resolved && h.data.theme==='dae' && h.answeredOk){
-    daeMission={h,stage:'getDae'};
+    daeMission={h,stage:'call'};
     h.ring.material.color=new THREE.Color(0xf08c00); // orange : mission en cours
-    showDaeMission();
+    openCallChoiceModal(); // reste sur #modal, enchaîne directement (pas besoin de le refermer avant)
+    return;
+  }
+  // Données : QCM réussi -> mission d'inspection (repérer 3 postes non sécurisés avant le QCM final)
+  if(!h.resolved && h.data.theme==='donnees' && h.answeredOk){
+    donneesMission={h,spots:DONNEES_SPOTS.map(s=>({...s,found:false})),foundCount:0};
+    h.ring.material.color=new THREE.Color(0xf08c00); // orange : mission en cours
+    showDonneesMission();
     $("#modal").style.display="none";return;
   }
   if(h.data.theme==='incendie') stopAlarm(); // mauvaise réponse (pas d'évacuation) -> on coupe la sirène
@@ -2555,7 +2583,7 @@ function showMission(){
 }
 function advanceMission(){
   if(fireMission.stage==='cut'){ fireMission.stage='getExt'; showMission(); }
-  else if(fireMission.stage==='getExt'){ fireMission.stage='extinguish'; carryingExt=true; $("#carry").style.display='block'; showMission(); }
+  else if(fireMission.stage==='getExt'){ openExtChoiceModal(); } // quiz : quel extincteur pour un feu électrique ?
   else {
     const h=fireMission.h; fireMission=null; carryingExt=false; nearMission=false;
     $("#carry").style.display='none';
@@ -2573,10 +2601,10 @@ function showDaeMission(){
   m.style.display='block';
   if(daeMission.stage==='getDae'){
     missionTargetPos.set(21.6,1.4,-10);missionPrompt="Prendre le défibrillateur";
-    m.innerHTML='🫀 Étape 2/3 — Va chercher le DAE (mur est), puis appuie sur E';
+    m.innerHTML='🫀 Étape 3/4 — Va chercher le DAE (mur est), puis appuie sur E';
   } else {
     missionTargetPos.set(daeMission.h.group.position.x,1.2,daeMission.h.group.position.z);missionPrompt="Utiliser le DAE sur la victime";
-    m.innerHTML='🚑 Étape 3/3 — Reviens auprès de la victime avec le DAE et appuie sur E pour l\'utiliser';
+    m.innerHTML='🚑 Étape 4/4 — Reviens auprès de la victime avec le DAE et appuie sur E pour l\'utiliser';
   }
 }
 function advanceDaeMission(){
@@ -2587,6 +2615,103 @@ function advanceDaeMission(){
   } else {
     openDaeUseModal();
   }
+}
+// Étape 3/4 de la mission feu électrique : choix de l'extincteur adapté (avant de repartir éteindre le feu).
+// Affiche l'affiche "TYPES D'EXTINCTEURS ET LEURS UTILISATIONS" (fichier attendu : extincteurs.png, à la
+// racine du projet, à côté de erreur.png) ; le joueur clique directement sur l'extincteur dans l'image.
+// left/width en % : position des 4 zones cliquables au-dessus des colonnes EAU/MOUSSE/CO2/POUDRE de l'image.
+// Si l'alignement ne colle pas exactement une fois le vrai fichier en place, ce sont ces 4 nombres à ajuster.
+const EXT_CHOICE_Q={
+  img:"extincteurs.png",
+  choices:[
+    {id:'eau',   label:"Eau",    left:25.5, width:18.6, ok:false,
+      fb:"Jamais d'eau sur un feu électrique : l'eau conduit le courant, risque d'électrocution en remontant le jet jusqu'à toi."},
+    {id:'mousse',label:"Mousse", left:44.1, width:18.6, ok:false,
+      fb:"La mousse contient de l'eau : elle conduit aussi le courant, à éviter tant que l'appareil est sous tension."},
+    {id:'co2',   label:"CO₂",    left:62.7, width:18.6, ok:true,
+      fb:"Exact. Le CO₂ ne conduit pas l'électricité et n'abîme pas le matériel : l'extincteur de référence pour un feu électrique."},
+    {id:'poudre',label:"Poudre", left:81.3, width:18.6, ok:true,
+      fb:"Bon choix aussi : la poudre est non conductrice et adaptée au feu électrique (elle laisse toutefois des résidus sur le matériel)."}
+  ],
+  tip:"Sur un feu électrique : CO₂ ou poudre, jamais eau ni mousse (conductrices). Si tu as pu couper le courant, l'eau redevient utilisable."
+};
+function openExtChoiceModal(){
+  const sc=EXT_CHOICE_Q;
+  $("#modal").style.display="flex";
+  $("#modalBody").innerHTML=`
+    <span class="scene-tag" style="background:${THEMES.feu.color}">${THEMES.feu.label}</span>
+    <div class="q">Clique sur l'extincteur adapté à un feu d'origine électrique :</div>
+    <div id="extImgWrap" style="position:relative;margin:10px 0;line-height:0">
+      <img src="${sc.img}" alt="Types d'extincteurs et leurs utilisations" style="width:100%;border-radius:10px;display:block">
+      ${sc.choices.map(c=>`<button class="extHot" data-id="${c.id}" title="${c.label}"
+        style="position:absolute;top:0;left:${c.left}%;width:${c.width}%;height:100%;background:transparent;border:3px solid transparent;border-radius:8px;cursor:pointer;padding:0"></button>`).join("")}
+    </div>
+    <div class="feedback" id="fb"></div>
+    <button class="btn full" id="contBtn">Continuer →</button>`;
+  $("#extImgWrap").querySelectorAll(".extHot").forEach(b=>b.onclick=()=>answerExtChoice(b.dataset.id));
+  $("#contBtn").onclick=()=>{
+    $("#modal").style.display="none";
+    fireMission.stage='extinguish';carryingExt=true;$("#carry").style.display='block';showMission();
+  };
+}
+function answerExtChoice(id){
+  const sc=EXT_CHOICE_Q,c=sc.choices.find(x=>x.id===id);
+  $("#extImgWrap").querySelectorAll(".extHot").forEach(b=>{
+    b.disabled=true;
+    const cc=sc.choices.find(x=>x.id===b.dataset.id);
+    if(cc.ok){b.style.borderColor="#1faa59";b.style.background="rgba(31,170,89,.18)";}
+    else if(b.dataset.id===id){b.style.borderColor="#e03131";b.style.background="rgba(224,49,49,.22)";}
+  });
+  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur('feu');}
+  const fb=$("#fb");fb.className="feedback show "+(c.ok?"ok":"ko");
+  fb.innerHTML=`<h3>${c.ok?"✅ Bonne réaction !":"❌ Réaction à risque"}</h3><div>${c.fb}</div>
+    <div class="tip">💡 <b>À retenir :</b> ${sc.tip}</div>`;
+  $("#contBtn").classList.add("show");updateHud();
+}
+// Étape 2/4 de la mission DAE : quel numéro appeler avant d'aller chercher l'appareil. Clavier
+// cliquable (2x2) plutôt qu'un texte à lire — 15 et 112 valides, 17 et 18 non adaptés à ce cas.
+const CALL_CHOICE_Q={
+  choices:[
+    {id:'17', label:"17",  sub:"Police / Gendarmerie",       ok:false, fb:"Le 17 est la police/gendarmerie : pour une urgence médicale, préfère le 15 ou le 112."},
+    {id:'18', label:"18",  sub:"Sapeurs-pompiers",           ok:false, fb:"Le 18 est surtout utile en cas d'incendie ; pour un malaise, le 15 (SAMU) ou le 112 sont plus directs."},
+    {id:'15', label:"15",  sub:"SAMU",                       ok:true,  fb:"Exact. Le 15 (SAMU) prend en charge les urgences médicales et te guide en attendant les secours."},
+    {id:'112',label:"112", sub:"Numéro d'urgence européen",  ok:true,  fb:"Exact aussi. Le 112 fonctionne partout en Europe et redirige vers le bon service, y compris médical."}
+  ],
+  tip:"Devant un malaise : 15 (SAMU) ou 112 (numéro d'urgence européen). Le 17 et le 18 concernent police et incendie."
+};
+function openCallChoiceModal(){
+  const sc=CALL_CHOICE_Q;
+  $("#modal").style.display="flex";
+  $("#modalBody").innerHTML=`
+    <span class="scene-tag" style="background:${THEMES.dae.color}">${THEMES.dae.label}</span>
+    <div class="scenario"><span class="ill">📞</span>La victime ne répond pas et ne respire pas normalement. Avant d'aller chercher le DAE...</div>
+    <div class="q">Étape 2/4 — Quel numéro appelles-tu en premier ?</div>
+    <div id="callPad" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0">
+      ${sc.choices.map(c=>`<button class="callKey" data-id="${c.id}"
+        style="padding:16px 10px;border-radius:12px;border:3px solid transparent;background:#2a2f3d;color:#e9effb;cursor:pointer;text-align:center">
+        <div style="font-size:26px;font-weight:800">${c.label}</div><div style="font-size:12px;opacity:.75;margin-top:4px">${c.sub}</div></button>`).join("")}
+    </div>
+    <div class="feedback" id="fb"></div>
+    <button class="btn full" id="contBtn">Continuer →</button>`;
+  $("#callPad").querySelectorAll(".callKey").forEach(b=>b.onclick=()=>answerCallChoice(b.dataset.id));
+  $("#contBtn").onclick=()=>{
+    $("#modal").style.display="none";
+    daeMission.stage='getDae';showDaeMission();
+  };
+}
+function answerCallChoice(id){
+  const sc=CALL_CHOICE_Q,c=sc.choices.find(x=>x.id===id);
+  $("#callPad").querySelectorAll(".callKey").forEach(b=>{
+    b.disabled=true;
+    const cc=sc.choices.find(x=>x.id===b.dataset.id);
+    if(cc.ok){b.style.borderColor="#1faa59";b.style.background="rgba(31,170,89,.18)";}
+    else if(b.dataset.id===id){b.style.borderColor="#e03131";b.style.background="rgba(224,49,49,.22)";}
+  });
+  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur('dae');}
+  const fb=$("#fb");fb.className="feedback show "+(c.ok?"ok":"ko");
+  fb.innerHTML=`<h3>${c.ok?"✅ Bonne réaction !":"❌ Réaction à risque"}</h3><div>${c.fb}</div>
+    <div class="tip">💡 <b>À retenir :</b> ${sc.tip}</div>`;
+  $("#contBtn").classList.add("show");updateHud();
 }
 const DAE_USE_Q={
   ill:"🫀",
@@ -2631,6 +2756,68 @@ function finishDaeMission(){
   h.ring.material.color=new THREE.Color(0x1faa59);h.ring.material.opacity=0.3;h.beam.visible=false;h.spr.material.opacity=0.35;
   if(collapsedDaeRef){spawnRescue('dae',collapsedDaeRef.position.x,collapsedDaeRef.position.z);}
   $("#mission").style.display='none';$("#prompt").style.display='none';
+  updateHud();
+  if(state.resolved>=ACTIVE_SCENARIOS.length){endGame();return;}
+}
+// Mission "données" : après le QCM initial (verrouiller son propre poste), repérer 3 postes de collègues
+// non sécurisés dans l'open space (E pour inspecter chacun), puis un QCM final tranche la bonne conduite.
+function showDonneesMission(){
+  const m=$("#mission");
+  if(!donneesMission){m.style.display='none';return;}
+  m.style.display='block';
+  const n=(donneesMission.foundCount||0)+1;
+  m.innerHTML=`🔍 Étape ${n}/${donneesMission.spots.length} — Repère les postes non sécurisés (E pour inspecter)`;
+}
+function advanceDonnees(){
+  const s=donneesMission.current;if(!s||s.found)return;
+  s.found=true;if(s.marker)s.marker.visible=false;if(s.light)s.light.visible=false;
+  donneesMission.foundCount=(donneesMission.foundCount||0)+1;
+  toast("👀 "+s.reason,"warn",2600);
+  if(donneesMission.foundCount>=donneesMission.spots.length){
+    $("#mission").style.display='none';$("#prompt").style.display='none';nearMission=false;
+    setTimeout(()=>openDonneesFinalModal(),900); // laisse le temps de lire le dernier toast
+  } else showDonneesMission();
+}
+const DONNEES_FINAL_Q={
+  ill:"🔐",
+  text:"Tu viens de repérer 3 postes de collègues : sessions non verrouillées, mot de passe sur un post-it, document client resté sur le bureau.",
+  q:"Que fais-tu ?",
+  choices:[
+    {t:"Tu verrouilles les sessions accessibles, ranges le document, et préviens les collègues concernés à leur retour.",ok:true,fb:"Exact. On agit tout de suite sans juger — chacun peut oublier — et on prévient pour que ça ne se reproduise pas."},
+    {t:"Ce n'est pas ton poste, tu n'interviens pas.",ok:false,fb:"La sécurité des données est l'affaire de toute l'équipe : un geste simple protège tout le monde, pas seulement soi-même."},
+    {t:"Tu prends une photo pour le montrer en réunion d'équipe.",ok:false,fb:"Inutile de garder une preuve avec des données sensibles dessus : on sécurise et on prévient directement."}],
+  tip:"Bureau propre = réflexe collectif. Verrouille, range, préviens — sans exposer davantage l'information."
+};
+function openDonneesFinalModal(){
+  const sc=DONNEES_FINAL_Q;
+  $("#modal").style.display="flex";
+  $("#modalBody").innerHTML=`
+    <span class="scene-tag" style="background:${THEMES.donnees.color}">${THEMES.donnees.label}</span>
+    <div class="scenario"><span class="ill">${sc.ill}</span>${sc.text}</div>
+    <div class="q">${sc.q}</div>
+    <div class="choices" id="choices">
+      ${sc.choices.map((c,i)=>`<button class="choice" data-i="${i}"><span class="key">${String.fromCharCode(65+i)}</span><span>${c.t}</span></button>`).join("")}
+    </div>
+    <div class="feedback" id="fb"></div>
+    <button class="btn full" id="contBtn">Continuer →</button>`;
+  $("#choices").querySelectorAll(".choice").forEach(b=>b.onclick=()=>answerDonneesFinal(+b.dataset.i));
+  $("#contBtn").onclick=()=>finishDonneesMission();
+}
+function answerDonneesFinal(idx){
+  const sc=DONNEES_FINAL_Q,c=sc.choices[idx];
+  $("#choices").querySelectorAll(".choice").forEach((b,k)=>{b.disabled=true;
+    if(sc.choices[k].ok)b.classList.add("good");else if(k===idx)b.classList.add("bad");else b.classList.add("dim");});
+  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur('donnees');}
+  const fb=$("#fb");fb.className="feedback show "+(c.ok?"ok":"ko");
+  fb.innerHTML=`<h3>${c.ok?"✅ Bonne réaction !":"❌ Réaction à risque"}</h3><div>${c.fb}</div>
+    <div class="tip">💡 <b>À retenir :</b> ${sc.tip}</div>`;
+  $("#contBtn").classList.add("show");updateHud();
+}
+function finishDonneesMission(){
+  $("#modal").style.display="none";
+  const h=donneesMission.h;donneesMission=null;nearMission=false;
+  h.resolved=true;state.resolved++;
+  h.ring.material.color=new THREE.Color(0x1faa59);h.ring.material.opacity=0.3;h.beam.visible=false;h.spr.material.opacity=0.35;
   updateHud();
   if(state.resolved>=ACTIVE_SCENARIOS.length){endGame();return;}
 }
@@ -2679,7 +2866,8 @@ function updateHud(){
   el.style.background=state.safety>66?"linear-gradient(90deg,#1faa59,#7be0a8)":state.safety>33?"linear-gradient(90deg,#f08c00,#ffd166)":"linear-gradient(90deg,#e03131,#ff8787)";
 }
 function endGame(){
-  const max=ACTIVE_SCENARIOS.length*10,pct=Math.round(state.score/max*100);
+  // le scénario "feu" rapporte 20 points au lieu de 10 (QCM initial + quiz du choix de l'extincteur, étape 3/4)
+  const max=ACTIVE_SCENARIOS.reduce((sum,s)=>sum+(s.theme==='feu'?20:10),0),pct=Math.round(state.score/max*100);
   let color,badge,msg;
   if(pct>=80){color="#1faa59";badge="Référent·e sécurité 🏅";msg="Excellent ! Tu adoptes les bons réflexes et tu protèges l'équipe et les clients.";}
   else if(pct>=50){color="#f08c00";badge="Sur la bonne voie 👍";msg="Pas mal ! Quelques réflexes à consolider pour devenir un vrai relais de sécurité.";}

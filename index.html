@@ -179,7 +179,7 @@
 </div>
 
 <div id="erreur">
-  <img id="erreurImg" src="erreur.png" alt="Erreur">
+  <img id="erreurImg" alt="Erreur">
   <div id="erreurFallback"><span class="em">😡</span>ERREUR&nbsp;!!!</div>
 </div>
 
@@ -2498,7 +2498,7 @@ function answer(h,idx){
   const sc=h.data,c=sc.choices[idx];
   $("#choices").querySelectorAll(".choice").forEach((b,k)=>{b.disabled=true;
     if(sc.choices[k].ok)b.classList.add("good");else if(k===idx)b.classList.add("bad");else b.classList.add("dim");});
-  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur();}
+  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur(sc.theme);}
   const fb=$("#fb");fb.className="feedback show "+(c.ok?"ok":"ko");
   fb.innerHTML=`<h3>${c.ok?"✅ Bonne réaction !":"❌ Réaction à risque"}</h3><div>${c.fb}</div>
     <div class="tip">💡 <b>À retenir :</b> ${sc.tip}</div>`;
@@ -2617,7 +2617,7 @@ function answerDaeUse(idx){
   const sc=DAE_USE_Q,c=sc.choices[idx];
   $("#choices").querySelectorAll(".choice").forEach((b,k)=>{b.disabled=true;
     if(sc.choices[k].ok)b.classList.add("good");else if(k===idx)b.classList.add("bad");else b.classList.add("dim");});
-  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur();}
+  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur('dae');}
   const fb=$("#fb");fb.className="feedback show "+(c.ok?"ok":"ko");
   fb.innerHTML=`<h3>${c.ok?"✅ Bonne réaction !":"❌ Réaction à risque"}</h3><div>${c.fb}</div>
     <div class="tip">💡 <b>À retenir :</b> ${sc.tip}</div>`;
@@ -2751,12 +2751,13 @@ $("#themeContinue").onclick=()=>{
   setTimeout(()=>{ buildWorld();animate();updateHud();$("#loading").style.display='none';$("#intro").style.display='flex'; },30);
 };
 
-// Overlay ERREUR à chaque mauvaise réponse (image erreur.png, repli emoji si absente)
-(()=>{const ei=$("#erreurImg"),fb=$("#erreurFallback");
-  const useFallback=()=>{ei.style.display="none";fb.style.display="block";};
-  ei.onerror=useFallback;
-  if(ei.complete&&ei.naturalWidth===0) useFallback(); // image erreur.png absente -> repli emoji
-})();
+// Overlay ERREUR à chaque mauvaise réponse : une image différente par thème de scénario, avec repli en
+// cascade — image du thème -> image générique erreur.png -> emoji (le même que celui du scénario) si les
+// deux images sont absentes. Fichiers attendus à la racine du projet, un par thème :
+// erreur_surete.png, erreur_donnees.png, erreur_incendie.png, erreur_secours.png, erreur_dae.png,
+// erreur_cyber.png, erreur_agression.png, erreur_poste.png, erreur_feu.png
+const ERR_IMG_BY_THEME=Object.fromEntries(Object.keys(THEMES).map(t=>[t,`erreur_${t}.png`]));
+const ERR_ICON_BY_THEME=Object.fromEntries(SCENARIOS.map(s=>[s.theme,s.ill]));
 /* ===================== Sons (Web Audio, sans fichier) ===================== */
 let actx=null;
 function audio(){ try{ if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended')actx.resume(); }catch(e){} return actx; }
@@ -2778,7 +2779,17 @@ function startAlarm(){ if(alarmTimer)return; if(!audio())return;
   const tick=()=>{ beep(900,0.28,'square',0.22,0); beep(750,0.28,'square',0.22,0.34); };
   tick(); alarmTimer=setInterval(tick,0.9*1000); }
 function stopAlarm(){ if(alarmTimer){clearInterval(alarmTimer);alarmTimer=null;} }
-function showErreur(){const e=$("#erreur");e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2500);playError();}
+function showErreur(theme){
+  const e=$("#erreur"),ei=$("#erreurImg"),fb=$("#erreurFallback");
+  fb.querySelector('.em').textContent=ERR_ICON_BY_THEME[theme]||'😡';
+  ei.style.display="";fb.style.display="none";
+  const useFallback=()=>{ei.style.display="none";fb.style.display="block";};
+  const useGeneric=()=>tryLoad('erreur.png',useFallback);
+  const tryLoad=(src,onFail)=>{ei.onerror=onFail;ei.src=src;if(ei.complete&&ei.naturalWidth===0)onFail();};
+  const themeImg=ERR_IMG_BY_THEME[theme];
+  if(themeImg)tryLoad(themeImg,useGeneric);else useGeneric();
+  e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2500);playError();
+}
 
 // Badgeage en 3D : LED rouge -> verte, BIP, la porte battante s'ouvre, le collider se déverrouille
 function scanBadge3D(){

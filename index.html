@@ -355,6 +355,8 @@
 } )();
 
 </script>
+<script src="GLTFLoader.js"></script>
+<script src="SkeletonUtils.js"></script>
 <script>
 const PointerLockControls = THREE.PointerLockControls;
 
@@ -473,6 +475,45 @@ const state={score:0,safety:100,resolved:0};
 const $=s=>document.querySelector(s);
 
 let renderer,scene,camera,clock;
+// modèles 3D (GLB) chargés au démarrage ; repli sur les primitives Three.js si le chargement échoue
+const gltfLoader=new THREE.GLTFLoader();
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null;
+function loadGltfModel(path,targetH,sink){
+  sink=sink||0;
+  return new Promise(resolve=>{
+    gltfLoader.load(encodeURI(path),gltf=>{
+      const obj=gltf.scene;
+      // retire les petites pièces de visserie/bracket (visibles comme des bosses en trop une fois l'objet posé au sol)
+      [...obj.children].forEach(c=>{ if(/bolt/i.test(c.name)) obj.remove(c); });
+      const size=new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+      const scale=size.y>0?targetH/size.y:1;
+      obj.scale.setScalar(scale);
+      obj.userData.baseOffset=-new THREE.Box3().setFromObject(obj).min.y-sink;
+      obj.traverse(n=>{if(n.isMesh){n.castShadow=true;n.receiveShadow=true;}});
+      resolve(obj);
+    },undefined,err=>{console.warn('modèle 3D non chargé, repli primitives:',path,err);resolve(null);});
+  });
+}
+function loadModels(){
+  return Promise.all([
+    loadGltfModel('models/Fire Extinguisher.glb',0.85,0.08).then(obj=>{MODEL_EXTINGUISHER=obj;}),
+    loadGltfModel('models/Desk Chair.glb',1.05).then(obj=>{MODEL_CHAIR=obj;})
+  ]);
+}
+function addChair(target,x,z,rotY){ // chaise de bureau : modèle 3D si chargé, sinon primitives (assise+dossier+pied)
+  rotY=rotY||0;
+  if(MODEL_CHAIR){
+    const m=MODEL_CHAIR.clone(true);
+    m.position.set(x,MODEL_CHAIR.userData.baseOffset,z);
+    m.rotation.y=rotY;
+    target.add(m);
+  } else {
+    const fx=Math.sin(rotY),fz=Math.cos(rotY);
+    const seat=new THREE.Mesh(G.seat,M.chair);seat.position.set(x,1.0,z);target.add(seat);
+    const back=new THREE.Mesh(G.back,M.chair);back.position.set(x-0.34*fx,1.42,z-0.34*fz);back.rotation.y=rotY;target.add(back);
+    const pole=new THREE.Mesh(G.pole,M.metal);pole.position.set(x,0.5,z);target.add(pole);
+  }
+}
 const hotspots=[],flames=[];
 const fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
 // déplacement au clavier (ZQSD/flèches) ; la souris tourne la tête sans pointer lock
@@ -1228,9 +1269,7 @@ function buildStarNPC(){
   // côté îlot F, juste devant le scénario phishing (x=5,z=6).
   const face=1, x=6.025, z=7-0.58; // = startX+c*dx, cz-sep (cols=2,dx=3.95,cx=8,cz=7)
   const sz=z-0.85*face;
-  const seat=new THREE.Mesh(G.seat,M.chair);seat.position.set(x,1.0,sz);scene.add(seat);
-  const back=new THREE.Mesh(G.back,M.chair);back.position.set(x,1.42,sz-0.34*face);scene.add(back);
-  const pole=new THREE.Mesh(G.pole,M.metal);pole.position.set(x,0.5,sz);scene.add(pole);
+  addChair(scene,x,sz,face>0?0:Math.PI);
   const npc=person(face,{beard:true,cap:true,headset:false});
   addNPC(npc,x,sz,0);
 }
@@ -1248,9 +1287,7 @@ function workstation(x,z,face,withPerson){
   const kbd=new THREE.Mesh(G.kbd,M.black);kbd.position.set(0,1.57,0.05*face);g.add(kbd);
   // chaise + personne côté EXTÉRIEUR de l'îlot
   const sz=-0.85*face;
-  const seat=new THREE.Mesh(G.seat,M.chair);seat.position.set(0,1.0,sz);g.add(seat);
-  const back=new THREE.Mesh(G.back,M.chair);back.position.set(0,1.42,sz-0.34*face);g.add(back);
-  const pole=new THREE.Mesh(G.pole,M.metal);pole.position.set(0,0.5,sz);g.add(pole);
+  addChair(g,0,sz,face>0?0:Math.PI);
   g.position.set(x,0,z);scene.add(g);
   if(withPerson){const p=person(face);addNPC(p,x,z+sz,0);}
 }
@@ -1366,9 +1403,8 @@ function buildTable(cx,cz){
   const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,1.4,12),M.metal);leg.position.set(cx,0.7,cz);scene.add(leg);
   for(let i=0;i<5;i++){
     const a=i/5*Math.PI*2, r=2.1;
-    const s=new THREE.Mesh(G.seat,M.chair);s.position.set(cx+Math.cos(a)*r,1.0,cz+Math.sin(a)*r);scene.add(s);
-    const b=new THREE.Mesh(G.back,M.chair);b.position.set(cx+Math.cos(a)*(r+0.35),1.42,cz+Math.sin(a)*(r+0.35));b.rotation.y=-a+Math.PI/2;scene.add(b);
-    const p=new THREE.Mesh(G.pole,M.metal);p.position.set(cx+Math.cos(a)*r,0.5,cz+Math.sin(a)*r);scene.add(p);
+    // la chaise fait face au centre de la table : vecteur avant = -(cos a, sin a)
+    addChair(scene,cx+Math.cos(a)*r,cz+Math.sin(a)*r,Math.atan2(-Math.cos(a),-Math.sin(a)));
   }
   COLLIDERS.push({minX:cx-3,maxX:cx+3,minZ:cz-3,maxZ:cz+3,type:'table'});
 }
@@ -1495,14 +1531,22 @@ function buildEntrancePorch(wx,cz,z0,z1){
   const mat=new THREE.Mesh(new THREE.PlaneGeometry(1.2,z1-z0-0.4),new THREE.MeshStandardMaterial({color:0x3a3f47,roughness:1}));
   mat.rotation.x=-Math.PI/2;mat.position.set(wx+0.8,0.02,cz);scene.add(mat);
 }
-function extinguisher(x,z){ // rond rouge = extincteur
-  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.6,14),new THREE.MeshStandardMaterial({color:0xd11616,roughness:.5}));
-  body.position.set(x,0.78,z);body.castShadow=true;scene.add(body);
-  const head=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.2,10),new THREE.MeshStandardMaterial({color:0x20262f}));
-  head.position.set(x,1.15,z);scene.add(head);
-  const base=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.06,16),new THREE.MeshStandardMaterial({color:0x333a48}));
-  base.position.set(x,0.45,z);scene.add(base);
-  const sign=emojiSprite('🧯',0.95);sign.position.set(x,1.75,z);scene.add(sign);
+function extinguisher(x,z){ // extincteur : modèle 3D (GLB) si chargé, sinon primitives de repli
+  if(MODEL_EXTINGUISHER){
+    const m=MODEL_EXTINGUISHER.clone(true);
+    m.position.set(x,MODEL_EXTINGUISHER.userData.baseOffset,z);
+    scene.add(m);
+  } else {
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.6,14),new THREE.MeshStandardMaterial({color:0xd11616,roughness:.5}));
+    body.position.set(x,0.78,z);body.castShadow=true;scene.add(body);
+    const head=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.2,10),new THREE.MeshStandardMaterial({color:0x20262f}));
+    head.position.set(x,1.15,z);scene.add(head);
+    const base=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.06,16),new THREE.MeshStandardMaterial({color:0x333a48}));
+    base.position.set(x,0.45,z);scene.add(base);
+    // repère emoji uniquement en repli primitives : le modèle 3D est assez lisible seul, et l'icône
+    // 🧯 (rendue comme un petit cylindre rouge/gris) se confondait visuellement avec le modèle réel.
+    const sign=emojiSprite('🧯',0.95);sign.position.set(x,1.75,z);scene.add(sign);
+  }
 }
 function buildExtinguishers(){EXTINGUISHERS.forEach(e=>extinguisher(e.x,e.z));}
 function buildSSI(x,z){
@@ -1731,9 +1775,7 @@ function placeGrandPoste(x,z,rotDeg){
     const scr=new THREE.Mesh(G.scr,M.screen);scr.position.set(mx,2.18,0.42);scr.rotation.y=Math.PI;g.add(scr);
   });
   const kbd=new THREE.Mesh(G.kbd,M.black);kbd.position.set(0,1.57,0.05);g.add(kbd);
-  const seat=new THREE.Mesh(G.seat,M.chair);seat.position.set(0,1.0,-0.85);g.add(seat);
-  const back=new THREE.Mesh(G.back,M.chair);back.position.set(0,1.42,-1.19);g.add(back);
-  const pole=new THREE.Mesh(G.pole,M.metal);pole.position.set(0,0.5,-0.85);g.add(pole);
+  addChair(g,0,-0.85,0);
   g.position.set(x,0,z);g.rotation.y=rotDeg*Math.PI/180;scene.add(g);
   COLLIDERS.push({minX:x-2.1,maxX:x+2.1,minZ:z-1.5,maxZ:z+1.5,type:'desk'});
   const rad=rotDeg*Math.PI/180,c=Math.cos(rad),s=Math.sin(rad),lz=-0.85; // agent face aux écrans (+z), enregistré pour l'évacuation
@@ -3105,8 +3147,9 @@ $("#themeContinue").onclick=()=>{
   ACTIVE_SCENARIOS=SCENARIOS.filter(s=>enabledThemes.has(s.theme));
   $("#themeSelect").style.display='none';
   $("#loading").style.display='flex';
-  // léger différé pour laisser le loader s'afficher avant la construction (synchrone et coûteuse) du monde 3D
-  setTimeout(()=>{ buildWorld();animate();updateHud();$("#loading").style.display='none';$("#intro").style.display='flex'; },30);
+  // léger différé pour laisser le loader s'afficher, puis chargement des modèles 3D (GLB) avant la
+  // construction (synchrone et coûteuse) du monde 3D
+  setTimeout(()=>{ loadModels().then(()=>{ buildWorld();animate();updateHud();$("#loading").style.display='none';$("#intro").style.display='flex'; }); },30);
 };
 
 // Overlay ERREUR à chaque mauvaise réponse : une image différente par thème de scénario, avec repli en

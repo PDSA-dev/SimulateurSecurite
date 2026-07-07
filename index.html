@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null;
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
@@ -513,15 +513,19 @@ function loadModels(){
         obj.traverse(n=>{ if(n.isMesh && n.material && n.material.name==='carpet') n.material.color.setHex(0x161616); });
       }
     }),
-    loadGltfModel('models/Monitor.glb',1.1).then(obj=>{MODEL_MONITOR=obj;}),
+    loadGltfModel('models/Monitor.glb',0.88).then(obj=>{MODEL_MONITOR=obj;}),
     loadGltfModel('models/Computer Mouse.glb',0.045).then(obj=>{MODEL_MOUSE=obj;}),
-    loadGltfModel('models/Keyboard.glb',0.03).then(obj=>{MODEL_KEYBOARD=obj;})
+    loadGltfModel('models/Keyboard.glb',0.03).then(obj=>{MODEL_KEYBOARD=obj;}),
+    loadGltfModel('models/Bathroom Sink Square.glb',0.85).then(obj=>{MODEL_SINK=obj;}),
+    loadGltfModel('models/Toilet.glb',1.0).then(obj=>{MODEL_TOILET=obj;}),
+    loadGltfModel('models/Mirror.glb',1.05).then(obj=>{MODEL_MIRROR=obj;}),
+    loadGltfModel('models/Open space Sofa.glb',1.28).then(obj=>{MODEL_SOFA=obj;}) // 2.56 × 0.5 (réduit de 50%)
   ]);
 }
 function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
   face=face||1;
   // écartement élargi (±0.85 au lieu de ±0.5) pour compenser le doublement de taille des écrans et éviter qu'ils se chevauchent
-  const dx=MODEL_MONITOR?0.85:0.5;
+  const dx=MODEL_MONITOR?0.68:0.5;
   [-dx,dx].forEach(mx=>{
     if(MODEL_MONITOR){
       const m=MODEL_MONITOR.clone(true);
@@ -1992,23 +1996,35 @@ function buildServiceRoom(){
   const lavaboFn=(x,z,ry,w,d)=>{
     const sx=(w||0.9)/0.9, sz=(d||0.76)/0.76;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;g.scale.set(sx,1,sz);scene.add(g);
-    const white=new THREE.MeshStandardMaterial({color:0xf5f5f2,roughness:.3});
-    const basin=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.22,0.62),white);basin.position.set(0,0.85,0.08);g.add(basin);
-    const ped=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.85,0.24),new THREE.MeshStandardMaterial({color:0xe8e8e4,roughness:.4}));ped.position.set(0,0.42,0.08);g.add(ped);
-    const tap=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.26,8),M.metal);tap.position.set(0,1.05,-0.12);g.add(tap);
+    if(MODEL_SINK){
+      const ms=MODEL_SINK.clone(true);ms.rotation.y=Math.PI;g.add(ms);
+    } else {
+      const white=new THREE.MeshStandardMaterial({color:0xf5f5f2,roughness:.3});
+      const basin=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.22,0.62),white);basin.position.set(0,0.85,0.08);g.add(basin);
+      const ped=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.85,0.24),new THREE.MeshStandardMaterial({color:0xe8e8e4,roughness:.4}));ped.position.set(0,0.42,0.08);g.add(ped);
+      const tap=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.26,8),M.metal);tap.position.set(0,1.05,-0.12);g.add(tap);
+    }
     COLLIDERS.push({minX:x-0.45*sx,maxX:x+0.45*sx,minZ:z-0.38*sz,maxZ:z+0.38*sz,type:'cabinet'});
   };
   const wcFn=(x,z,ry,w,d)=>{
     const sx=(w||1)/1, sz=(d||1.05)/1.05;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;g.scale.set(sx,1,sz);scene.add(g);
-    const white=new THREE.MeshStandardMaterial({color:0xf5f5f2,roughness:.3});
-    const tank=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.5,0.22),white);tank.position.set(0,0.8,-0.26);g.add(tank);
-    const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.22,0.5,16),white);bowl.rotation.x=Math.PI/2;bowl.position.set(0,0.45,0.05);g.add(bowl);
-    const seat=new THREE.Mesh(new THREE.RingGeometry(0.19,0.27,20),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.4,side:THREE.DoubleSide}));seat.rotation.x=-Math.PI/2;seat.position.set(0,0.68,0.05);g.add(seat);
+    if(MODEL_TOILET){
+      const mt=MODEL_TOILET.clone(true);g.add(mt);
+    } else {
+      const white=new THREE.MeshStandardMaterial({color:0xf5f5f2,roughness:.3});
+      const tank=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.5,0.22),white);tank.position.set(0,0.8,-0.26);g.add(tank);
+      const bowl=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.22,0.5,16),white);bowl.rotation.x=Math.PI/2;bowl.position.set(0,0.45,0.05);g.add(bowl);
+      const seat=new THREE.Mesh(new THREE.RingGeometry(0.19,0.27,20),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.4,side:THREE.DoubleSide}));seat.rotation.x=-Math.PI/2;seat.position.set(0,0.68,0.05);g.add(seat);
+    }
     COLLIDERS.push({minX:x-0.5*sx,maxX:x+0.5*sx,minZ:z-0.55*sz,maxZ:z+0.5*sz,type:'cabinet'});
   };
   const miroirFn=(x,z,ry)=>{
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    if(MODEL_MIRROR){
+      const m=MODEL_MIRROR.clone(true);m.position.y=1.025;g.add(m);
+      return;
+    }
     const frame=new THREE.Mesh(new THREE.BoxGeometry(0.85,1.05,0.03),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.5}));frame.position.set(0,1.55,0.02);g.add(frame);
     const mir=new THREE.Mesh(new THREE.PlaneGeometry(0.78,0.98),new THREE.MeshStandardMaterial({color:0xcfe0e8,roughness:.05,metalness:.6}));mir.position.set(0,1.55,0.036);g.add(mir);
   };
@@ -2247,14 +2263,18 @@ function buildGardeCorps(){
     [x0,x1].forEach(x=>{const t=new THREE.Mesh(new THREE.PlaneGeometry(bw,ad),hazEW);t.rotation.x=-Math.PI/2;t.position.set(x,0.04,acz);scene.add(t);});
   }
 }
-function couch(x,z,ry,len=2.0){ // canapé rouge (len = longueur)
+function couch(x,z,ry,len=2.0){ // canapé rouge : modèle 3D si chargé, sinon primitives (len = longueur, primitives seulement)
   const g=new THREE.Group();
-  const red=new THREE.MeshStandardMaterial({color:0xcf2b2b,roughness:.85});
-  const part=(geo,mat,px,py,pz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(px,py,pz);g.add(m);};
-  part(new THREE.BoxGeometry(len,0.45,0.95),red,0,0.4,0);            // assise
-  part(new THREE.BoxGeometry(len,0.7,0.24),red,0,0.85,0.36);         // dossier
-  [-(len/2-0.1),(len/2-0.1)].forEach(ax=>part(new THREE.BoxGeometry(0.22,0.62,0.95),red,ax,0.6,0)); // accoudoirs
-  part(new THREE.BoxGeometry(len-0.5,0.18,0.78),new THREE.MeshStandardMaterial({color:0xe23b3b,roughness:.9}),0,0.66,-0.03); // coussins
+  if(MODEL_SOFA){
+    const m=MODEL_SOFA.clone(true);g.add(m); // pas de flip interne : orientation validée après retour utilisateur
+  } else {
+    const red=new THREE.MeshStandardMaterial({color:0xcf2b2b,roughness:.85});
+    const part=(geo,mat,px,py,pz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(px,py,pz);g.add(m);};
+    part(new THREE.BoxGeometry(len,0.45,0.95),red,0,0.4,0);            // assise
+    part(new THREE.BoxGeometry(len,0.7,0.24),red,0,0.85,0.36);         // dossier
+    [-(len/2-0.1),(len/2-0.1)].forEach(ax=>part(new THREE.BoxGeometry(0.22,0.62,0.95),red,ax,0.6,0)); // accoudoirs
+    part(new THREE.BoxGeometry(len-0.5,0.18,0.78),new THREE.MeshStandardMaterial({color:0xe23b3b,roughness:.9}),0,0.66,-0.03); // coussins
+  }
   g.position.set(x,0,z);g.rotation.y=ry;scene.add(g);
   const along=len/2+0.12, dep=0.55, horiz=Math.abs(Math.cos(ry))>0.5;
   COLLIDERS.push({minX:x-(horiz?along:dep),maxX:x+(horiz?along:dep),minZ:z-(horiz?dep:along),maxZ:z+(horiz?dep:along),type:'sofa'});

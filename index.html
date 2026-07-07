@@ -480,6 +480,7 @@ let renderer,scene,camera,clock;
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
 let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null;
+const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
   if(!gltfLoader){ console.warn('GLTFLoader indisponible (script non chargé) : repli primitives.'); return Promise.resolve(null); }
@@ -512,14 +513,16 @@ function loadModels(){
         obj.traverse(n=>{ if(n.isMesh && n.material && n.material.name==='carpet') n.material.color.setHex(0x161616); });
       }
     }),
-    loadGltfModel('models/Monitor.glb',0.55).then(obj=>{MODEL_MONITOR=obj;}),
+    loadGltfModel('models/Monitor.glb',1.1).then(obj=>{MODEL_MONITOR=obj;}),
     loadGltfModel('models/Computer Mouse.glb',0.045).then(obj=>{MODEL_MOUSE=obj;}),
     loadGltfModel('models/Keyboard.glb',0.03).then(obj=>{MODEL_KEYBOARD=obj;})
   ]);
 }
 function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
   face=face||1;
-  [-0.5,0.5].forEach(mx=>{
+  // écartement élargi (±0.85 au lieu de ±0.5) pour compenser le doublement de taille des écrans et éviter qu'ils se chevauchent
+  const dx=MODEL_MONITOR?0.85:0.5;
+  [-dx,dx].forEach(mx=>{
     if(MODEL_MONITOR){
       const m=MODEL_MONITOR.clone(true);
       m.position.set(mx,1.55,0.46*face); // posé sur le bureau (y=1.55, plateau à 1.5 + 0.05 d'épaisseur)
@@ -1577,7 +1580,7 @@ function buildEntrancePorch(wx,cz,z0,z1){
   const mat=new THREE.Mesh(new THREE.PlaneGeometry(1.2,z1-z0-0.4),new THREE.MeshStandardMaterial({color:0x3a3f47,roughness:1}));
   mat.rotation.x=-Math.PI/2;mat.position.set(wx+0.8,0.02,cz);scene.add(mat);
 }
-function extinguisher(x,z){ // extincteur : modèle 3D (GLB) si chargé, sinon primitives de repli
+function extinguisher(x,z,signRotY){ // extincteur : modèle 3D (GLB) si chargé, sinon primitives de repli
   if(MODEL_EXTINGUISHER){
     const m=MODEL_EXTINGUISHER.clone(true);
     m.position.set(x,0,z);
@@ -1593,8 +1596,11 @@ function extinguisher(x,z){ // extincteur : modèle 3D (GLB) si chargé, sinon p
     // 🧯 (rendue comme un petit cylindre rouge/gris) se confondait visuellement avec le modèle réel.
     const sign=emojiSprite('🧯',0.95);sign.position.set(x,1.75,z);scene.add(sign);
   }
+  // panonceau réglementaire (poudre polyvalente / classe ABC) au mur, au-dessus de l'extincteur
+  const panel=new THREE.Mesh(new THREE.PlaneGeometry(0.4,0.6),new THREE.MeshBasicMaterial({map:EXT_SIGN_TEX,transparent:true}));
+  panel.position.set(x,1.85,z);panel.rotation.y=signRotY||0;scene.add(panel);
 }
-function buildExtinguishers(){EXTINGUISHERS.forEach(e=>extinguisher(e.x,e.z));}
+function buildExtinguishers(){EXTINGUISHERS.forEach(e=>extinguisher(e.x,e.z,Math.PI));}
 function buildSSI(x,z){
   // Centrale d'incendie SSI (caisson mural), façade vers le plateau (-z)
   const cab=new THREE.Mesh(new THREE.BoxGeometry(0.72,0.96,0.22),new THREE.MeshStandardMaterial({color:0xd9d3c5,roughness:.6}));cab.position.set(x,1.55,z);scene.add(cab);
@@ -1674,7 +1680,7 @@ function buildFurniture(){
   printer(-6.04,20.71,Math.PI);     // près des armoires DPX
   printer(13.86,9.81,Math.PI*1.5); // ACM est
   // ---- sécurité (éditeur) — pas de SSI ----
-  extinguisher(21.5,-12);     // près de la sortie de secours
+  extinguisher(21.5,-12,-Math.PI/2);     // près de la sortie de secours
   alarmTrigger(5.6,20.9);     // déclenchement d'alarme près de la porte
 }
 function buildOfficeDoors(){
@@ -2205,7 +2211,7 @@ function buildServiceRoom(){
   // (les 2 tables rondes cuisine/terrasse ont été retirées du plan — remplacées par les tables rectangulaires ci-dessus)
   tvFn(10.99,39.76,90,3.4,2);
   canapeFn(19.19,28.44,90);
-  extinguisher(-0.95,29.45); // cuisine
+  extinguisher(-0.95,29.45,0); // cuisine
   // terrasse jardin : pergola, fauteuils, arbres
   pergolaFn(6.64,48.27,0,5.3,6);
   // rotations +180° par rapport au plan : telles quelles elles pointaient pile à l'opposé du centre de la pergola

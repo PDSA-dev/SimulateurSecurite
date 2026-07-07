@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_KSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null;
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
@@ -519,7 +519,11 @@ function loadModels(){
     loadGltfModel('models/Bathroom Sink Square.glb',0.85).then(obj=>{MODEL_SINK=obj;}),
     loadGltfModel('models/Toilet.glb',1.0).then(obj=>{MODEL_TOILET=obj;}),
     loadGltfModel('models/Mirror.glb',1.05).then(obj=>{MODEL_MIRROR=obj;}),
-    loadGltfModel('models/Open space Sofa.glb',1.28).then(obj=>{MODEL_SOFA=obj;}) // 2.56 × 0.5 (réduit de 50%)
+    loadGltfModel('models/Open space Sofa.glb',1.28).then(obj=>{MODEL_SOFA=obj;}), // 2.56 × 0.5 (réduit de 50%)
+    loadGltfModel('models/Kitchen Sink.glb',0.85).then(obj=>{MODEL_KSINK=obj;}),
+    loadGltfModel('models/Refrigirator.glb',2.8).then(obj=>{MODEL_FRIDGE=obj;}),
+    loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
+    loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}) // gabarit unitaire, remis à l'échelle par instance
   ]);
 }
 function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
@@ -2063,9 +2067,13 @@ function buildServiceRoom(){
     [[-lx0,-lx0],[lx0,-lx0],[-lx0,lx0],[lx0,lx0]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,th-0.05,6),M.metal);leg.position.set(lx,(th-0.05)/2,lz);g.add(leg);});
     COLLIDERS.push({minX:x-tw/2,maxX:x+tw/2,minZ:z-tw/2,maxZ:z+tw/2,type:'cabinet'});
   };
-  const evierFn=(x,z,ry,w,d)=>{ // évier de cuisine (éditeur) : bac inox + robinet, sur meuble bas
+  const evierFn=(x,z,ry,w,d)=>{ // évier de cuisine (éditeur) : modèle 3D si chargé, sinon primitives (bac inox + robinet, sur meuble bas)
     const ew=w||0.9, ed=d||0.6;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    if(MODEL_KSINK){
+      const m=MODEL_KSINK.clone(true);m.scale.set(ew/0.9,1,ed/0.6);g.add(m);
+      return;
+    }
     const cab=new THREE.Mesh(new THREE.BoxGeometry(ew,0.82,ed),new THREE.MeshStandardMaterial({color:0xe8e4da,roughness:.6}));cab.position.y=0.41;g.add(cab);
     const steel=new THREE.MeshStandardMaterial({color:0xc7ccd2,roughness:.25,metalness:.75});
     const rim=new THREE.Mesh(new THREE.BoxGeometry(ew,0.04,ed),steel);rim.position.y=0.84;g.add(rim);
@@ -2106,18 +2114,28 @@ function buildServiceRoom(){
     const roof=new THREE.Mesh(new THREE.BoxGeometry(pw,0.1,pd),postMat);roof.position.y=2.65;g.add(roof);
     for(let i=-hz+0.1;i<=hz-0.1;i+=0.5){const slat=new THREE.Mesh(new THREE.BoxGeometry(pw,0.06,0.1),postMat);slat.position.set(0,2.72,i);g.add(slat);}
   };
+  // gabarit natif du modèle distributeur chargé (Vending Machine.glb) à targetH=1.0, pour recalculer l'échelle par instance
+  const VEND_W=0.6764, VEND_D=0.3385;
   const distribBoissonFn=(x,z,ry,w,d,h)=>{
     const bw=w||0.9, bd=d||0.8, bh=h||1.8;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
-    const body=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),new THREE.MeshStandardMaterial({color:0x3a6ea5,roughness:.4,metalness:.3}));body.position.y=bh/2;g.add(body);
-    const panel=new THREE.Mesh(new THREE.PlaneGeometry(bw*0.67,bh*0.5),new THREE.MeshStandardMaterial({color:0x1a2a3a,roughness:.2}));panel.position.set(0,bh*0.61,bd/2+0.01);g.add(panel);
+    if(MODEL_VENDING){
+      const m=MODEL_VENDING.clone(true);m.scale.set(bw/VEND_W,bh,bd/VEND_D);g.add(m);
+    } else {
+      const body=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),new THREE.MeshStandardMaterial({color:0x3a6ea5,roughness:.4,metalness:.3}));body.position.y=bh/2;g.add(body);
+      const panel=new THREE.Mesh(new THREE.PlaneGeometry(bw*0.67,bh*0.5),new THREE.MeshStandardMaterial({color:0x1a2a3a,roughness:.2}));panel.position.set(0,bh*0.61,bd/2+0.01);g.add(panel);
+    }
     COLLIDERS.push({minX:x-bw/2-0.1,maxX:x+bw/2+0.1,minZ:z-bd/2-0.05,maxZ:z+bd/2+0.05,type:'cabinet'});
   };
   const distribCafeFn=(x,z,ry,w,d,h,scale)=>{
     const s=scale||1, bw=(w||0.5)*s, bd=(d||0.5)*s, bh=(h||1.1)*s;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
-    const body=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),new THREE.MeshStandardMaterial({color:0x6b4a2f,roughness:.5}));body.position.y=bh/2;g.add(body);
-    const tray=new THREE.Mesh(new THREE.BoxGeometry(bw*0.6,0.05,bd*0.4),new THREE.MeshStandardMaterial({color:0x2a2a2a}));tray.position.set(0,bh*0.32,bd/2-0.05);g.add(tray);
+    if(MODEL_VENDING){
+      const m=MODEL_VENDING.clone(true);m.scale.set(bw/VEND_W,bh,bd/VEND_D);g.add(m);
+    } else {
+      const body=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),new THREE.MeshStandardMaterial({color:0x6b4a2f,roughness:.5}));body.position.y=bh/2;g.add(body);
+      const tray=new THREE.Mesh(new THREE.BoxGeometry(bw*0.6,0.05,bd*0.4),new THREE.MeshStandardMaterial({color:0x2a2a2a}));tray.position.set(0,bh*0.32,bd/2-0.05);g.add(tray);
+    }
     COLLIDERS.push({minX:x-bw/2,maxX:x+bw/2,minZ:z-bd/2,maxZ:z+bd/2,type:'cabinet'});
   };
   const WORKTOP_H=1.5; // hauteur du dessus du plan de travail (éditeur) — référence partagée avec microondeFn
@@ -2134,14 +2152,24 @@ function buildServiceRoom(){
     // (éditeur) détermine le haut du four, donc son centre = WORKTOP_H + h/2 (ex: 1.5 + 1 = 2.5 m de haut au total).
     const s=scale||1, mw=(w||0.5)*s, md=(d||0.35)*s, mh=(h!=null?h:0.3)*s, cy=WORKTOP_H+mh/2;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    if(MODEL_MICROWAVE){
+      // gabarit natif à targetH=1.0 : largeur/profondeur du modèle chargé à cette échelle
+      const NW=1.656, ND=1.176;
+      const m=MODEL_MICROWAVE.clone(true);m.scale.set(mw/NW,mh,md/ND);m.position.y=WORKTOP_H;g.add(m);
+      return;
+    }
     const body=new THREE.Mesh(new THREE.BoxGeometry(mw,mh,md),new THREE.MeshStandardMaterial({color:0x4a4d52,roughness:.4,metalness:.3}));body.position.y=cy;g.add(body);
     const door=new THREE.Mesh(new THREE.PlaneGeometry(mw*0.64,mh*0.73),new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.2}));door.position.set(0.02,cy,md/2+0.001);g.add(door);
   };
   const frigoFn=(x,z,ry,w,d,h)=>{
     const fw=w||0.7, fd=d||0.65, fh=h||1.8;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
-    const body=new THREE.Mesh(new THREE.BoxGeometry(fw,fh,fd),new THREE.MeshStandardMaterial({color:0xe8e8e8,roughness:.35,metalness:.2}));body.position.y=fh/2;g.add(body);
-    const handle=new THREE.Mesh(new THREE.BoxGeometry(0.04,fh*0.28,0.04),M.metal);handle.position.set(fw/2-0.1,fh*0.61,fd/2);g.add(handle);
+    if(MODEL_FRIDGE){
+      const m=MODEL_FRIDGE.clone(true);m.scale.set(fw/1.4,fh/2.8,fd/1.6);g.add(m); // 1.4/1.6/2.8 = dimensions du gabarit chargé
+    } else {
+      const body=new THREE.Mesh(new THREE.BoxGeometry(fw,fh,fd),new THREE.MeshStandardMaterial({color:0xe8e8e8,roughness:.35,metalness:.2}));body.position.y=fh/2;g.add(body);
+      const handle=new THREE.Mesh(new THREE.BoxGeometry(0.04,fh*0.28,0.04),M.metal);handle.position.set(fw/2-0.1,fh*0.61,fd/2);g.add(handle);
+    }
     COLLIDERS.push({minX:x-fw/2-0.1,maxX:x+fw/2+0.1,minZ:z-fd/2-0.1,maxZ:z+fd/2+0.1,type:'cabinet'});
   };
   // sol/plafond de l'aile (bâtiment couvert, z 24→45) + pelouse du jardin/terrasse (z 45→55, extérieur)

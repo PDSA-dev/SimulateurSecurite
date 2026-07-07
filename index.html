@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null;
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
@@ -523,7 +523,11 @@ function loadModels(){
     loadGltfModel('models/Countertop Sink.glb',1.907).then(obj=>{MODEL_CSINK=obj;}), // hauteur calibrée pour que le plan de la vasque tombe à WORKTOP_H=1.5
     loadGltfModel('models/Refrigirator.glb',3.36).then(obj=>{MODEL_FRIDGE=obj;}), // 2.8 × 1.2 (agrandi de 20%)
     loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
-    loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}) // gabarit unitaire, remis à l'échelle par instance
+    loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}), // gabarit unitaire, remis à l'échelle par instance
+    loadGltfModel('models/Water Cooler.glb',1.3).then(obj=>{MODEL_COOLER=obj;}),
+    loadGltfModel('models/Standing Desk.glb',1.5).then(obj=>{MODEL_STANDDESK=obj;}), // gabarit unitaire, remis à l'échelle par instance (footprint du bureau conservé)
+    loadGltfModel('models/Table.glb',0.74).then(obj=>{MODEL_TABLE=obj;}), // gabarit unitaire, remis à l'échelle par instance
+    loadGltfModel('models/Chair.glb',0.85).then(obj=>{MODEL_CHAIR2=obj;}) // gabarit unitaire, remis à l'échelle par instance
   ]);
 }
 function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
@@ -559,6 +563,16 @@ function addKeyboard(target,x,z,rotY){ // clavier : modèle 3D si chargé, sinon
   } else {
     const kbd=new THREE.Mesh(G.kbd,M.black);kbd.position.set(x,1.57,z);target.add(kbd);
   }
+}
+// gabarit natif du standing desk chargé (Standing Desk.glb) à targetH=1.5
+const SDESK_W=2.3735, SDESK_D=1.2942;
+function addDesk(target){ // bureau : standing desk 3D si chargé (redimensionné à l'emprise 3.8×1.1), sinon primitives (plateau+4 pieds)
+  if(MODEL_STANDDESK){
+    const m=MODEL_STANDDESK.clone(true);m.scale.set(3.8/SDESK_W,1,1.1/SDESK_D);target.add(m);
+    return;
+  }
+  const top=new THREE.Mesh(G.top,M.desk);top.position.y=1.5;top.castShadow=true;target.add(top);
+  [[-1.7,-0.45],[1.7,-0.45],[-1.7,0.45],[1.7,0.45]].forEach(([lx,lz])=>{const l=new THREE.Mesh(G.leg,M.metal);l.position.set(lx,0.75,lz);target.add(l);});
 }
 function addChair(target,x,z,rotY){ // chaise de bureau : modèle 3D si chargé, sinon primitives (assise+dossier+pied)
   rotY=rotY||0;
@@ -1337,8 +1351,7 @@ function workstation(x,z,face,withPerson){
   // face=+1 : la personne regarde vers +z ; -1 : vers -z.
   // Le double écran est au bord AVANT (côté centre de l'îlot) -> écrans dos à dos entre les deux rangées.
   const g=new THREE.Group();
-  const top=new THREE.Mesh(G.top,M.desk);top.position.y=1.5;top.castShadow=true;g.add(top);
-  [[-1.7,-0.45],[1.7,-0.45],[-1.7,0.45],[1.7,0.45]].forEach(([lx,lz])=>{const l=new THREE.Mesh(G.leg,M.metal);l.position.set(lx,0.75,lz);g.add(l);});
+  addDesk(g);
   addMonitorPair(g,face);
   addKeyboard(g,0,0.05*face,face>0?Math.PI:0);
   addMouse(g,0.65,0.05*face,face>0?Math.PI:0);
@@ -1827,8 +1840,7 @@ function buildGrandPostes(){ GRANDPOSTES.forEach(p=>placeGrandPoste(p[0],p[1],p[
 function placeGrandPoste(x,z,rotDeg){
   // poste open-space : grand bureau + DOUBLE écran devant (+z), agent + fauteuil derrière (-z).
   const g=new THREE.Group();
-  const top=new THREE.Mesh(G.top,M.desk);top.position.set(0,1.5,0);top.castShadow=true;g.add(top);
-  [[-1.7,-0.45],[1.7,-0.45],[-1.7,0.45],[1.7,0.45]].forEach(([lx,lz])=>{const l=new THREE.Mesh(G.leg,M.metal);l.position.set(lx,0.75,lz);g.add(l);});
+  addDesk(g);
   addMonitorPair(g,1);
   addKeyboard(g,0,0.05,Math.PI);
   addMouse(g,0.65,0.05,Math.PI);
@@ -2040,9 +2052,17 @@ function buildServiceRoom(){
     const top=new THREE.Mesh(new THREE.BoxGeometry(cw+0.03,0.03,cd+0.03),new THREE.MeshStandardMaterial({color:0x8a8270,roughness:.6}));top.position.y=ch+0.015;g.add(top);
     COLLIDERS.push({minX:x-cw/2,maxX:x+cw/2,minZ:z-cd/2,maxZ:z+cd/2,type:'cabinet'});
   };
+  // gabarits natifs des modèles chargés (Table.glb à targetH=0.74, Chair.glb à targetH=0.85), pour l'échelle par instance
+  const TABLE_W=1.1522, TABLE_D=1.9421, CHAIR2_W=0.3264, CHAIR2_D=0.3651;
   const tableFn=(x,z,ry,w,d,h)=>{
     const tw=w||1.4, td=d||0.8, th=h||0.74, lh=th-0.06;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    if(MODEL_TABLE){
+      const m=MODEL_TABLE.clone(true);m.scale.set(tw/TABLE_W,th/0.74,td/TABLE_D);g.add(m);
+      const along=Math.abs(Math.cos((ry||0)*Math.PI/180))>0.5, hw=tw/2+0.06, hd=td/2+0.06;
+      COLLIDERS.push({minX:x-(along?hw:hd),maxX:x+(along?hw:hd),minZ:z-(along?hd:hw),maxZ:z+(along?hd:hw),type:'desk'});
+      return;
+    }
     const top=new THREE.Mesh(new THREE.BoxGeometry(tw,0.06,td),new THREE.MeshStandardMaterial({color:0xc9a876,roughness:.6}));top.position.y=th;g.add(top);
     const lx0=tw/2-0.1, lz0=td/2-0.1;
     [[-lx0,-lz0],[lx0,-lz0],[-lx0,lz0],[lx0,lz0]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,lh,8),M.metal);leg.position.set(lx,lh/2,lz);g.add(leg);});
@@ -2052,6 +2072,10 @@ function buildServiceRoom(){
   const chaiseFn=(x,z,ry,w,d)=>{
     const cw=w||0.42, cd=d||0.42;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    if(MODEL_CHAIR2){
+      const m=MODEL_CHAIR2.clone(true);m.scale.set(cw/CHAIR2_W,1,cd/CHAIR2_D);g.add(m);
+      return;
+    }
     const mat=new THREE.MeshStandardMaterial({color:0x8a6d4f,roughness:.7});
     const seat=new THREE.Mesh(new THREE.BoxGeometry(cw,0.05,cd),mat);seat.position.y=0.46;g.add(seat);
     const back=new THREE.Mesh(new THREE.BoxGeometry(cw,0.5,0.05),mat);back.position.set(0,0.71,-cd/2+0.025);g.add(back);
@@ -2116,11 +2140,15 @@ function buildServiceRoom(){
   };
   // gabarit natif du modèle distributeur chargé (Vending Machine.glb) à targetH=1.0, pour recalculer l'échelle par instance
   const VEND_W=0.6764, VEND_D=0.3385;
-  const distribBoissonFn=(x,z,ry,w,d,h)=>{
+  // gabarit natif de la fontaine à eau (Water Cooler.glb) à targetH=1.3
+  const COOLER_W=0.2996, COOLER_D=0.3509;
+  const distribBoissonFn=(x,z,ry,w,d,h)=>{ // « petit distributeur » -> fontaine à eau
     const bw=w||0.9, bd=d||0.8, bh=h||1.8;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
-    if(MODEL_VENDING){
-      const m=MODEL_VENDING.clone(true);m.scale.set(bw/VEND_W,bh,bd/VEND_D);g.add(m);
+    if(MODEL_COOLER){
+      // échelle UNIFORME (pas d'étirement en largeur/profondeur) : la fontaine est un objet fin et haut,
+      // contrairement au distributeur en boîte qu'elle remplace — l'étirer sur bw/bd l'écrasait à plat.
+      const m=MODEL_COOLER.clone(true);const cs=bh/1.3;m.scale.set(cs,cs,cs);g.add(m);
     } else {
       const body=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),new THREE.MeshStandardMaterial({color:0x3a6ea5,roughness:.4,metalness:.3}));body.position.y=bh/2;g.add(body);
       const panel=new THREE.Mesh(new THREE.PlaneGeometry(bw*0.67,bh*0.5),new THREE.MeshStandardMaterial({color:0x1a2a3a,roughness:.2}));panel.position.set(0,bh*0.61,bd/2+0.01);g.add(panel);

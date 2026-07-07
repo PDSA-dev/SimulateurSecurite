@@ -476,10 +476,13 @@ const $=s=>document.querySelector(s);
 
 let renderer,scene,camera,clock;
 // modèles 3D (GLB) chargés au démarrage ; repli sur les primitives Three.js si le chargement échoue
-const gltfLoader=new THREE.GLTFLoader();
+// (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
+// on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
+const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
 let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null;
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
+  if(!gltfLoader){ console.warn('GLTFLoader indisponible (script non chargé) : repli primitives.'); return Promise.resolve(null); }
   return new Promise(resolve=>{
     gltfLoader.load(encodeURI(path),gltf=>{
       const obj=gltf.scene;

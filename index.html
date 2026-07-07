@@ -500,7 +500,7 @@ function loadGltfModel(path,targetH,sink){
 function loadModels(){
   return Promise.all([
     loadGltfModel('models/Fire Extinguisher.glb',0.85,0.08).then(obj=>{MODEL_EXTINGUISHER=obj;}),
-    loadGltfModel('models/Desk Chair.glb',1.05).then(obj=>{MODEL_CHAIR=obj;})
+    loadGltfModel('models/Desk Chair.glb',2.1).then(obj=>{MODEL_CHAIR=obj;})
   ]);
 }
 function addChair(target,x,z,rotY){ // chaise de bureau : modèle 3D si chargé, sinon primitives (assise+dossier+pied)
@@ -508,7 +508,7 @@ function addChair(target,x,z,rotY){ // chaise de bureau : modèle 3D si chargé,
   if(MODEL_CHAIR){
     const m=MODEL_CHAIR.clone(true);
     m.position.set(x,MODEL_CHAIR.userData.baseOffset,z);
-    m.rotation.y=rotY;
+    m.rotation.y=rotY+Math.PI; // le modèle a son "avant" tourné de 180° par rapport à la convention +Z utilisée ici
     target.add(m);
   } else {
     const fx=Math.sin(rotY),fz=Math.cos(rotY);

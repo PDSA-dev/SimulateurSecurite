@@ -491,15 +491,21 @@ function loadGltfModel(path,targetH,sink){
       const size=new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
       const scale=size.y>0?targetH/size.y:1;
       obj.scale.setScalar(scale);
-      obj.userData.baseOffset=-new THREE.Box3().setFromObject(obj).min.y-sink;
-      obj.traverse(n=>{if(n.isMesh){n.castShadow=true;n.receiveShadow=true;}});
-      resolve(obj);
+      // l'origine du modèle n'est pas forcément centrée sur son emprise (souvent à un coin) : on le recentre
+      // dans un groupe conteneur pour que (0,0,0) du groupe = centre XZ du modèle, posé au sol. Sans ça, le
+      // décalage entre l'origine et le vrai centre visuel grandit avec l'échelle (très visible en x2).
+      const box=new THREE.Box3().setFromObject(obj);
+      const center=box.getCenter(new THREE.Vector3());
+      obj.position.set(-center.x,-box.min.y-sink,-center.z);
+      const wrapper=new THREE.Group();wrapper.add(obj);
+      wrapper.traverse(n=>{if(n.isMesh){n.castShadow=true;n.receiveShadow=true;}});
+      resolve(wrapper);
     },undefined,err=>{console.warn('modèle 3D non chargé, repli primitives:',path,err);resolve(null);});
   });
 }
 function loadModels(){
   return Promise.all([
-    loadGltfModel('models/Fire Extinguisher.glb',0.85,0.08).then(obj=>{MODEL_EXTINGUISHER=obj;}),
+    loadGltfModel('models/Fire Extinguisher.glb',0.85).then(obj=>{MODEL_EXTINGUISHER=obj;}),
     loadGltfModel('models/Desk Chair.glb',2.1).then(obj=>{MODEL_CHAIR=obj;})
   ]);
 }
@@ -507,7 +513,7 @@ function addChair(target,x,z,rotY){ // chaise de bureau : modèle 3D si chargé,
   rotY=rotY||0;
   if(MODEL_CHAIR){
     const m=MODEL_CHAIR.clone(true);
-    m.position.set(x,MODEL_CHAIR.userData.baseOffset,z);
+    m.position.set(x,0,z);
     m.rotation.y=rotY+Math.PI; // le modèle a son "avant" tourné de 180° par rapport à la convention +Z utilisée ici
     target.add(m);
   } else {
@@ -1537,7 +1543,7 @@ function buildEntrancePorch(wx,cz,z0,z1){
 function extinguisher(x,z){ // extincteur : modèle 3D (GLB) si chargé, sinon primitives de repli
   if(MODEL_EXTINGUISHER){
     const m=MODEL_EXTINGUISHER.clone(true);
-    m.position.set(x,MODEL_EXTINGUISHER.userData.baseOffset,z);
+    m.position.set(x,0,z);
     scene.add(m);
   } else {
     const body=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.6,14),new THREE.MeshStandardMaterial({color:0xd11616,roughness:.5}));

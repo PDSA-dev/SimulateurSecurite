@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null;
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
   if(!gltfLoader){ console.warn('GLTFLoader indisponible (script non chargé) : repli primitives.'); return Promise.resolve(null); }
@@ -511,8 +511,43 @@ function loadModels(){
       if(obj){ // fauteuils de bureau noirs (le tissu du modèle est rouge par défaut)
         obj.traverse(n=>{ if(n.isMesh && n.material && n.material.name==='carpet') n.material.color.setHex(0x161616); });
       }
-    })
+    }),
+    loadGltfModel('models/Monitor.glb',0.55).then(obj=>{MODEL_MONITOR=obj;}),
+    loadGltfModel('models/Computer Mouse.glb',0.045).then(obj=>{MODEL_MOUSE=obj;}),
+    loadGltfModel('models/Keyboard.glb',0.03).then(obj=>{MODEL_KEYBOARD=obj;})
   ]);
+}
+function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
+  face=face||1;
+  [-0.5,0.5].forEach(mx=>{
+    if(MODEL_MONITOR){
+      const m=MODEL_MONITOR.clone(true);
+      m.position.set(mx,1.55,0.46*face); // posé sur le bureau (y=1.55, plateau à 1.5 + 0.05 d'épaisseur)
+      m.rotation.y=face>0?Math.PI:0;
+      target.add(m);
+    } else {
+      const arm=new THREE.Mesh(G.arm,M.arm);arm.position.set(mx,1.8,0.42*face);target.add(arm);
+      const mon=new THREE.Mesh(G.mon,M.black);mon.position.set(mx,2.18,0.46*face);mon.rotation.y=face>0?Math.PI:0;target.add(mon);
+      const scr=new THREE.Mesh(G.scr,M.screen);scr.position.set(mx,2.18,(0.46-0.04)*face);scr.rotation.y=face>0?Math.PI:0;target.add(scr);
+    }
+  });
+}
+function addMouse(target,x,z,rotY){ // souris posée sur le bureau à côté du clavier ; ignoré si le modèle n'a pas chargé (pas de repli primitif)
+  if(!MODEL_MOUSE) return;
+  const m=MODEL_MOUSE.clone(true);
+  m.position.set(x,1.55,z);
+  m.rotation.y=rotY||0;
+  target.add(m);
+}
+function addKeyboard(target,x,z,rotY){ // clavier : modèle 3D si chargé, sinon primitive (pavé noir)
+  if(MODEL_KEYBOARD){
+    const m=MODEL_KEYBOARD.clone(true);
+    m.position.set(x,1.55,z);
+    m.rotation.y=rotY||0;
+    target.add(m);
+  } else {
+    const kbd=new THREE.Mesh(G.kbd,M.black);kbd.position.set(x,1.57,z);target.add(kbd);
+  }
 }
 function addChair(target,x,z,rotY){ // chaise de bureau : modèle 3D si chargé, sinon primitives (assise+dossier+pied)
   rotY=rotY||0;
@@ -1293,12 +1328,9 @@ function workstation(x,z,face,withPerson){
   const g=new THREE.Group();
   const top=new THREE.Mesh(G.top,M.desk);top.position.y=1.5;top.castShadow=true;g.add(top);
   [[-1.7,-0.45],[1.7,-0.45],[-1.7,0.45],[1.7,0.45]].forEach(([lx,lz])=>{const l=new THREE.Mesh(G.leg,M.metal);l.position.set(lx,0.75,lz);g.add(l);});
-  [-0.5,0.5].forEach(mx=>{
-    const arm=new THREE.Mesh(G.arm,M.arm);arm.position.set(mx,1.8,0.42*face);g.add(arm);
-    const mon=new THREE.Mesh(G.mon,M.black);mon.position.set(mx,2.18,0.46*face);mon.rotation.y=face>0?Math.PI:0;g.add(mon);
-    const scr=new THREE.Mesh(G.scr,M.screen);scr.position.set(mx,2.18,(0.46-0.04)*face);scr.rotation.y=face>0?Math.PI:0;g.add(scr);
-  });
-  const kbd=new THREE.Mesh(G.kbd,M.black);kbd.position.set(0,1.57,0.05*face);g.add(kbd);
+  addMonitorPair(g,face);
+  addKeyboard(g,0,0.05*face,face>0?Math.PI:0);
+  addMouse(g,0.65,0.05*face,face>0?Math.PI:0);
   // chaise + personne côté EXTÉRIEUR de l'îlot
   const sz=-0.85*face;
   addChair(g,0,sz,face>0?0:Math.PI);
@@ -1783,12 +1815,9 @@ function placeGrandPoste(x,z,rotDeg){
   const g=new THREE.Group();
   const top=new THREE.Mesh(G.top,M.desk);top.position.set(0,1.5,0);top.castShadow=true;g.add(top);
   [[-1.7,-0.45],[1.7,-0.45],[-1.7,0.45],[1.7,0.45]].forEach(([lx,lz])=>{const l=new THREE.Mesh(G.leg,M.metal);l.position.set(lx,0.75,lz);g.add(l);});
-  [-0.5,0.5].forEach(mx=>{
-    const arm=new THREE.Mesh(G.arm,M.arm);arm.position.set(mx,1.8,0.42);g.add(arm);
-    const mon=new THREE.Mesh(G.mon,M.black);mon.position.set(mx,2.18,0.46);mon.rotation.y=Math.PI;g.add(mon);
-    const scr=new THREE.Mesh(G.scr,M.screen);scr.position.set(mx,2.18,0.42);scr.rotation.y=Math.PI;g.add(scr);
-  });
-  const kbd=new THREE.Mesh(G.kbd,M.black);kbd.position.set(0,1.57,0.05);g.add(kbd);
+  addMonitorPair(g,1);
+  addKeyboard(g,0,0.05,Math.PI);
+  addMouse(g,0.65,0.05,Math.PI);
   addChair(g,0,-0.85,0);
   g.position.set(x,0,z);g.rotation.y=rotDeg*Math.PI/180;scene.add(g);
   COLLIDERS.push({minX:x-2.1,maxX:x+2.1,minZ:z-1.5,maxZ:z+1.5,type:'desk'});

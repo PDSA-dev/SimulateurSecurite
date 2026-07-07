@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_FEMALE=null,MODEL_MALE=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null;
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
   if(!gltfLoader){ console.warn('GLTFLoader indisponible (script non chargé) : repli primitives.'); return Promise.resolve(null); }
@@ -503,21 +503,6 @@ function loadGltfModel(path,targetH,sink){
     },undefined,err=>{console.warn('modèle 3D non chargé, repli primitives:',path,err);resolve(null);});
   });
 }
-function loadHumanModel(path,targetH){
-  // modèle de personnage riggé (os + SkinnedMesh) : pas de recentrage de coin ni de retrait de pièces
-  // (on a besoin de la hiérarchie d'origine intacte pour SkeletonUtils.clone), juste une mise à l'échelle.
-  if(!gltfLoader){ console.warn('GLTFLoader indisponible (script non chargé) : repli personnage procédural.'); return Promise.resolve(null); }
-  return new Promise(resolve=>{
-    gltfLoader.load(encodeURI(path),gltf=>{
-      const obj=gltf.scene;
-      const size=new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
-      const scale=size.y>0?targetH/size.y:1;
-      obj.scale.setScalar(scale);
-      obj.traverse(n=>{if(n.isMesh){n.castShadow=true;n.receiveShadow=true;}});
-      resolve(obj);
-    },undefined,err=>{console.warn('modèle 3D non chargé (personnage), repli procédural:',path,err);resolve(null);});
-  });
-}
 function loadModels(){
   return Promise.all([
     loadGltfModel('models/Fire Extinguisher.glb',0.85).then(obj=>{MODEL_EXTINGUISHER=obj;}),
@@ -526,25 +511,8 @@ function loadModels(){
       if(obj){ // fauteuils de bureau noirs (le tissu du modèle est rouge par défaut)
         obj.traverse(n=>{ if(n.isMesh && n.material && n.material.name==='carpet') n.material.color.setHex(0x161616); });
       }
-    }),
-    loadHumanModel('models/Generic Female.glb',1.68).then(obj=>{MODEL_FEMALE=obj;}),
-    loadHumanModel('models/Generic Male.glb',1.78).then(obj=>{MODEL_MALE=obj;})
+    })
   ]);
-}
-function personModel(face=1,opts={}){ // agent en modèle 3D riggé (Generic Female/Male) ; repli sur person() procédural si indisponible
-  if(!MODEL_FEMALE||!MODEL_MALE) return person(face,opts);
-  const female=opts.female!==undefined?opts.female:Math.random()<0.5;
-  const core=THREE.SkeletonUtils.clone(female?MODEL_FEMALE:MODEL_MALE);
-  const feet=[];
-  core.traverse(n=>{ if(n.isBone && (n.name==='FootL'||n.name==='FootR')){ n.userData.restZ=n.rotation.z; feet.push(n); } });
-  const g=new THREE.Group();g.add(core);
-  g.rotation.y=(face>0?0:Math.PI)+(Math.random()-0.5)*0.3;
-  // assis : pieds/chaussures pivotés à 90° (rotation locale Z du bone du pied = pivot dans le plan horizontal,
-  // le seul mouvement qui garde le pied au niveau du sol avec ce rig sans genou). Remis à plat quand le PNJ
-  // se lève pour suivre le joueur (voir NPCS state 'following'/'idle' dans updateNPCs).
-  g.userData.setSeated=(seated)=>{ feet.forEach(f=>{ f.rotation.z=f.userData.restZ+(seated?Math.PI/2:0); }); };
-  if(opts.seated) g.userData.setSeated(true);
-  return g;
 }
 function addChair(target,x,z,rotY){ // chaise de bureau : modèle 3D si chargé, sinon primitives (assise+dossier+pied)
   rotY=rotY||0;
@@ -1267,7 +1235,6 @@ function updateNPCs(dt){
       n.mesh.rotation.y=Math.atan2(dx,dz);
     } else if(n.state==='returning'){
       n.mesh.position.set(n.home.x,0,n.home.z);n.mesh.rotation.y=n.home.ry;n.state='idle';
-      if(n.mesh.userData.setSeated)n.mesh.userData.setSeated(true); // rassis : pieds repliés à 90°
     }
   });
 }
@@ -1278,11 +1245,11 @@ function spawnRescue(kind,victimX,victimZ){
   const entry={x:1.3,z:19.5}; // point d'entrée/sortie côté porte open space
   const actors=[];
   if(kind==='sst'){
-    const a=personModel(1,{headset:false});a.position.set(entry.x,0,entry.z);scene.add(a);
+    const a=person(1,{headset:false});a.position.set(entry.x,0,entry.z);scene.add(a);
     actors.push({mesh:a,off:{x:0,z:0}});
   } else {
-    const a1=personModel(1,{headset:false});a1.position.set(entry.x-0.4,0,entry.z);scene.add(a1);
-    const a2=personModel(1,{headset:false});a2.position.set(entry.x+0.4,0,entry.z);scene.add(a2);
+    const a1=person(1,{headset:false});a1.position.set(entry.x-0.4,0,entry.z);scene.add(a1);
+    const a2=person(1,{headset:false});a2.position.set(entry.x+0.4,0,entry.z);scene.add(a2);
     const stretcher=new THREE.Group();
     const frame=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.08,1.9),new THREE.MeshStandardMaterial({color:0xd6d6d6,roughness:.6}));frame.position.y=0.5;stretcher.add(frame);
     const pad=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.04,1.8),new THREE.MeshStandardMaterial({color:0xc1121f,roughness:.7}));pad.position.y=0.55;stretcher.add(pad);
@@ -1317,7 +1284,7 @@ function buildStarNPC(){
   const face=1, x=6.025, z=7-0.58; // = startX+c*dx, cz-sep (cols=2,dx=3.95,cx=8,cz=7)
   const sz=z-0.85*face;
   addChair(scene,x,sz,face>0?0:Math.PI);
-  const npc=personModel(face,{seated:true});
+  const npc=person(face,{beard:true,cap:true,headset:false});
   addNPC(npc,x,sz,0);
 }
 function workstation(x,z,face,withPerson){
@@ -1336,7 +1303,7 @@ function workstation(x,z,face,withPerson){
   const sz=-0.85*face;
   addChair(g,0,sz,face>0?0:Math.PI);
   g.position.set(x,0,z);scene.add(g);
-  if(withPerson){const p=personModel(face,{seated:true});addNPC(p,x,z+sz,0);}
+  if(withPerson){const p=person(face);addNPC(p,x,z+sz,0);}
 }
 function pod(cx,cz,cols,dx=3.95,skip=null){
   // îlot = 2 rangées dos à dos, bureaux COLLÉS les uns aux autres
@@ -1826,7 +1793,7 @@ function placeGrandPoste(x,z,rotDeg){
   g.position.set(x,0,z);g.rotation.y=rotDeg*Math.PI/180;scene.add(g);
   COLLIDERS.push({minX:x-2.1,maxX:x+2.1,minZ:z-1.5,maxZ:z+1.5,type:'desk'});
   const rad=rotDeg*Math.PI/180,c=Math.cos(rad),s=Math.sin(rad),lz=-0.85; // agent face aux écrans (+z), enregistré pour l'évacuation
-  const pers=personModel(1,{seated:true});addNPC(pers,x+lz*s,z+lz*c,rad);
+  const pers=person(1);addNPC(pers,x+lz*s,z+lz*c,rad);
 }
 function buildCorridorDecor(){
   // (grilles/vitrines d'affichage du couloir retirées)
@@ -2543,10 +2510,10 @@ function addHotspot(sc){
   hotspots.push(h);
 }
 function buildCollapsed(x,z){
-  const g=personModel();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);collapsedRef=g;
+  const g=person();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);collapsedRef=g;
 }
 function buildCollapsedDae(x,z){
-  const g=personModel();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);collapsedDaeRef=g;
+  const g=person();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);collapsedDaeRef=g;
 }
 
 /* ===================== Collision ===================== */
@@ -3080,7 +3047,7 @@ function startEvac(){
   if(evacGroup) evacGroup.visible=true;          // affiche les flèches d'évacuation
   const al=$("#alarm"); if(al) al.style.display='block';
   startAlarm();                                  // sirène d'évacuation incendie
-  NPCS.forEach(n=>{n.state='following';if(n.mesh.userData.setSeated)n.mesh.userData.setSeated(false);});       // tous les PNJ se lèvent (pieds à plat) et suivent le joueur
+  NPCS.forEach(n=>{n.state='following';});       // tous les PNJ se lèvent et suivent le joueur
   showEvac();
 }
 function showEvac(){

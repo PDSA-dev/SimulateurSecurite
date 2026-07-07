@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_KSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null;
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
@@ -517,11 +517,11 @@ function loadModels(){
     loadGltfModel('models/Computer Mouse.glb',0.045).then(obj=>{MODEL_MOUSE=obj;}),
     loadGltfModel('models/Keyboard.glb',0.03).then(obj=>{MODEL_KEYBOARD=obj;}),
     loadGltfModel('models/Bathroom Sink Square.glb',0.85).then(obj=>{MODEL_SINK=obj;}),
-    loadGltfModel('models/Toilet.glb',1.0).then(obj=>{MODEL_TOILET=obj;}),
+    loadGltfModel('models/Toilet.glb',1.3).then(obj=>{MODEL_TOILET=obj;}), // 1.0 × 1.3 (agrandi de 30%)
     loadGltfModel('models/Mirror.glb',1.05).then(obj=>{MODEL_MIRROR=obj;}),
-    loadGltfModel('models/Open space Sofa.glb',1.28).then(obj=>{MODEL_SOFA=obj;}), // 2.56 × 0.5 (réduit de 50%)
-    loadGltfModel('models/Kitchen Sink.glb',0.85).then(obj=>{MODEL_KSINK=obj;}),
-    loadGltfModel('models/Refrigirator.glb',2.8).then(obj=>{MODEL_FRIDGE=obj;}),
+    loadGltfModel('models/Open space Sofa.glb',1.92).then(obj=>{MODEL_SOFA=obj;}), // 1.28 × 1.5 (agrandi de 50%)
+    loadGltfModel('models/Countertop Sink.glb',1.907).then(obj=>{MODEL_CSINK=obj;}), // hauteur calibrée pour que le plan de la vasque tombe à WORKTOP_H=1.5
+    loadGltfModel('models/Refrigirator.glb',3.36).then(obj=>{MODEL_FRIDGE=obj;}), // 2.8 × 1.2 (agrandi de 20%)
     loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
     loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}) // gabarit unitaire, remis à l'échelle par instance
   ]);
@@ -2070,8 +2070,8 @@ function buildServiceRoom(){
   const evierFn=(x,z,ry,w,d)=>{ // évier de cuisine (éditeur) : modèle 3D si chargé, sinon primitives (bac inox + robinet, sur meuble bas)
     const ew=w||0.9, ed=d||0.6;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
-    if(MODEL_KSINK){
-      const m=MODEL_KSINK.clone(true);m.scale.set(ew/0.9,1,ed/0.6);g.add(m);
+    if(MODEL_CSINK){ // évier meuble complet : posé au sol, hauteur déjà calibrée pour aligner la vasque sur WORKTOP_H
+      g.add(MODEL_CSINK.clone(true));
       return;
     }
     const cab=new THREE.Mesh(new THREE.BoxGeometry(ew,0.82,ed),new THREE.MeshStandardMaterial({color:0xe8e4da,roughness:.6}));cab.position.y=0.41;g.add(cab);
@@ -2242,16 +2242,20 @@ function buildServiceRoom(){
   ].forEach(([x,z,ry,w,h])=>tabouretFn(x,z,ry,w,h));
   // tables (vestiaire + salle de formation + terrasse jardin) — tailles reprises de l'éditeur
   [[14.52,37.89,180,3,1.5],[17.58,37.9,180,3,1.5],[13.82,40.23,270,3,1.5],[18.31,40.17,90,3,1.5],[14.59,42.57,180,3,1.5],[17.61,42.55,180,3,1.5],
-   [-13.88,28.16,90,3,1.5],[-13.89,31.61,90,3,1.5],[-13.21,43.05,180,3,1.5],[-9.93,43.07,180,3,1.5],
    [-11.45,52.8,180,3,1.5],[-8.34,52.82,180,3,1.5],[6.56,48.9,90,2.5,1.6,0.5]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
-  // chaises agrandies (0.6×0.6 m, éditeur) : salle de formation + vestiaire + coin repas + terrasse
+  // tables du coin repas de la cuisine (x2 zones) — agrandies de 20% (3×1.5 -> 3.6×1.8)
+  [[-13.88,28.16,90,3.6,1.8],[-13.89,31.61,90,3.6,1.8],[-13.21,43.05,180,3.6,1.8],[-9.93,43.07,180,3.6,1.8]
+  ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
+  // chaises agrandies (0.6×0.6 m, éditeur) : salle de formation + terrasse
   [[13.85,36.64,0],[15.29,36.65,0],[16.77,36.7,0],[18.18,36.68,0],[19.55,38.04,90],[19.59,39.18,90],[19.56,40.38,90],[19.57,41.62,90],[19.61,42.72,90],
    [18.45,43.75,180],[17.3,43.8,180],[15.65,43.9,180],[14.05,43.91,180],
-   [-12.73,27.23,270],[-12.74,28.84,270],[-15.06,28.88,90],[-15.09,27.32,90],[-12.73,30.79,270],[-12.74,32.37,270],[-15.12,30.67,90],[-15.13,32.41,90],
-   [-14.11,41.75,0],[-12.52,41.75,0],[-10.78,41.77,0],[-9.24,41.74,0],[-7.9,43.16,270],[-8.89,44.33,180],[-10.59,44.33,180],[-12.49,44.28,180],[-13.99,44.23,180],
    [-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,270]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.6,0.6));
+  // chaises du coin repas de la cuisine (x2 zones) — agrandies de 20% (0.6×0.6 -> 0.72×0.72)
+  [[-12.73,27.23,270],[-12.74,28.84,270],[-15.06,28.88,90],[-15.09,27.32,90],[-12.73,30.79,270],[-12.74,32.37,270],[-15.12,30.67,90],[-15.13,32.41,90],
+   [-14.11,41.75,0],[-12.52,41.75,0],[-10.78,41.77,0],[-9.24,41.74,0],[-7.9,43.16,270],[-8.89,44.33,180],[-10.59,44.33,180],[-12.49,44.28,180],[-13.99,44.23,180]
+  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.72,0.72));
   // (les 2 tables rondes cuisine/terrasse ont été retirées du plan — remplacées par les tables rectangulaires ci-dessus)
   tvFn(10.99,39.76,90,3.4,2);
   canapeFn(19.19,28.44,90);

@@ -2271,22 +2271,24 @@ function buildServiceRoom(){
   annexFloor.rotation.x=-Math.PI/2;annexFloor.position.set(annexCX,0.01,annexCZ);annexFloor.receiveShadow=true;scene.add(annexFloor);
   const annexCeil=new THREE.Mesh(new THREE.PlaneGeometry(annexW,annexD),new THREE.MeshStandardMaterial({map:repeatTex(ceilingTex(),annexW/2,annexD/2),color:0xf4f6f9,roughness:.9}));
   annexCeil.rotation.x=Math.PI/2;annexCeil.position.set(annexCX,H,annexCZ);scene.add(annexCeil);
-  // terrasse jardin : dalles de bois sur toute la surface, avec une zone de gazon en forme organique
-  // (validée sur plan avec l'éditeur) posée par-dessus : bord est (parking) + bulle autour de la pergola/palmier,
-  // en laissant les tables à manger (côté ouest, z>51.5) sur dalle de bois.
+  // terrasse jardin : dalles de bois sur toute la surface, avec 3 zones de gazon en forme organique posées
+  // par-dessus (tracées à la souris dans l'éditeur de plan, catégorie "zone gazon").
   const gz0=45, gz1=55.2, gx0=-21, gx1=20.05;
   const deckW=gx1-gx0, deckCX=gx0+deckW/2;
   const deck=new THREE.Mesh(new THREE.PlaneGeometry(deckW,gz1-gz0),new THREE.MeshStandardMaterial({map:repeatTex(woodDeckTex(),deckW/1.6,(gz1-gz0)/1.6),roughness:.75}));
   deck.rotation.x=-Math.PI/2;deck.position.set(deckCX,0.006,(gz0+gz1)/2);deck.receiveShadow=true;scene.add(deck);
-  // contour du gazon en (x,z) monde, sens direct ; converti en points de Shape (x,-z) car une rotation -90°
+  // contours du gazon en (x,z) monde, sens direct ; convertis en points de Shape (x,-z) car une rotation -90°
   // autour de X envoie l'axe local Y vers -Z monde (cf. commentaire loadGltfModel pour le repère général).
-  const LAWN_PTS=[
-    [-4,45],[-5,46.5],[-2,48],[1,47.5],[4,49.5],[7,50],[9.29,51.5],
-    [9.29,55.2],[gx1,55.2],[gx1,45]
+  const LAWN_ZONES=[
+    [[20,45],[20,55],[-4,55],[-4,53],[3,53],[3,48],[-6,48],[-6,45]],           // grande zone est (parking/pergola/palmiers)
+    [[-14.5,45],[-14.5,47.5],[-10.5,47.5],[-10.5,45]],                        // petite zone près de la porte cuisine (buissons)
+    [[-21,45],[-19,45],[-19,49],[-20,49],[-20,52],[-16,52],[-16,55],[-21,55]] // bande côté mur ouest (buissons + tabourets)
   ];
-  const lawnShape=new THREE.Shape(LAWN_PTS.map(([x,z])=>new THREE.Vector2(x,-z)));
-  const grass=new THREE.Mesh(new THREE.ShapeGeometry(lawnShape),new THREE.MeshStandardMaterial({color:0x5a8a4a,roughness:1}));
-  grass.rotation.x=-Math.PI/2;grass.position.set(0,0.007,0);grass.receiveShadow=true;scene.add(grass);
+  LAWN_ZONES.forEach(pts=>{
+    const lawnShape=new THREE.Shape(pts.map(([x,z])=>new THREE.Vector2(x,-z)));
+    const grass=new THREE.Mesh(new THREE.ShapeGeometry(lawnShape),new THREE.MeshStandardMaterial({color:0x5a8a4a,roughness:1}));
+    grass.rotation.x=-Math.PI/2;grass.position.set(0,0.007,0);grass.receiveShadow=true;scene.add(grass);
+  });
   // éclairage des pièces
   [[-6.72,28.5],[-6.73,34.8],[-16.69,30.8],[-12.25,41.2],[7.2,29.4],[7.67,39.9],[15.4,39.9],[17.6,29.4],[1.1,41.2],[1.68,30.7],[13.08,29.4]].forEach(([lx,lz])=>{
     const pl=new THREE.PointLight(0xfff3da,0.45,14);pl.position.set(lx,H-0.6,lz);scene.add(pl);

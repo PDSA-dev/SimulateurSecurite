@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null,MODEL_COFFEE=null,MODEL_COFFEE2=null,MODEL_MUGS=null;
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink,keepOnly){
   sink=sink||0;
@@ -538,6 +538,9 @@ function loadModels(){
     loadGltfModel('models/Mirror.glb',1.05).then(obj=>{MODEL_MIRROR=obj;}),
     loadGltfModel('models/Open space Sofa.glb',1.92).then(obj=>{MODEL_SOFA=obj;}), // 1.28 × 1.5 (agrandi de 50%)
     loadGltfModel('models/Countertop Sink.glb',1.907).then(obj=>{MODEL_CSINK=obj;}), // hauteur calibrée pour que le plan de la vasque tombe à WORKTOP_H=1.5
+    loadGltfModel('models/Coffee Machine.glb',0.35).then(obj=>{MODEL_COFFEE=obj;}),
+    loadGltfModel('models/Coffee Machine-2.glb',0.38).then(obj=>{MODEL_COFFEE2=obj;}),
+    loadGltfModel('models/Mugs.glb',0.11).then(obj=>{MODEL_MUGS=obj;}),
     loadGltfModel('models/Refrigirator.glb',3.36).then(obj=>{MODEL_FRIDGE=obj;}), // 2.8 × 1.2 (agrandi de 20%)
     loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
     loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}), // gabarit unitaire, remis à l'échelle par instance
@@ -2161,6 +2164,11 @@ function buildServiceRoom(){
     const along=Math.abs(Math.cos((ry||0)*Math.PI/180))>0.5, hw=ew/2+0.03, hd=ed/2+0.03;
     COLLIDERS.push({minX:x-(along?hw:hd),maxX:x+(along?hw:hd),minZ:z-(along?hd:hw),maxZ:z+(along?hd:hw),type:'cabinet'});
   };
+  const petitObjetPlanFn=(model,x,z,ry,fallbackColor,fw,fh,fd)=>{ // petit objet posé sur un plan de travail (cafetière, mugs...) : y=dessus du plan (WORKTOP_H)
+    const g=new THREE.Group();g.position.set(x,WORKTOP_H,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
+    if(model){ g.add(model.clone(true)); return; }
+    const body=new THREE.Mesh(new THREE.BoxGeometry(fw,fh,fd),new THREE.MeshStandardMaterial({color:fallbackColor,roughness:.4}));body.position.y=fh/2;g.add(body);
+  };
   const tvFn=(x,z,ry,w,h)=>{
     const tw=w||1.1, th=tw*0.562, cy=h||1.7;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
@@ -2331,6 +2339,10 @@ function buildServiceRoom(){
   // sanitaires
   [[-2.92,31.16,180,1.5,1.5],[5.86,28.12,180,1.5,1.5],[5.88,29.89,0,1.5,1.5]].forEach(([x,z,ry,w,d])=>lavaboFn(x,z,ry,w,d));
   evierFn(-20.13,31.89,90,1.8,1.4); // évier de cuisine (éditeur) — remplace l'ancien lavabo posé en cuisine
+  // cafetières + mugs sur le plan de travail, à gauche de l'évier (côté sud, z>évier) sur le 3e plan de travail (x=-20.12,z=34.81)
+  petitObjetPlanFn(MODEL_COFFEE,-20.12,33.3,90,0x2a2a2a,0.25,0.35,0.22);
+  petitObjetPlanFn(MODEL_COFFEE2,-20.12,34.1,90,0x3a3a3a,0.22,0.32,0.2);
+  petitObjetPlanFn(MODEL_MUGS,-20.12,34.9,90,0xf0f0f0,0.15,0.1,0.15);
   [[-11.34,30.18,270,1.5,1.5],[-11.36,26.08,270,1.5,1.5],[10.08,25.41,90,1.5,1.5],[9.73,29.96,0,1.5,1.5]].forEach(([x,z,ry,w,d])=>wcFn(x,z,ry,w,d));
   [[5.9,29.1,0],[5.9,28.92,180],[-2.89,31.99,180]].forEach(([x,z,ry])=>miroirFn(x,z,ry));
   // vestiaire : casiers (éditeur)
@@ -2344,7 +2356,7 @@ function buildServiceRoom(){
   distribCafeFn(-20.17,37.89,90,2,1.2,2.8,1.5); // hauteur 2.8 m + échelle×1.5 (éditeur)
   // micro-ondes posés sur les plans de travail : hauteur = dessus du plan de travail (WORKTOP_H, cf plandetravailFn)
   // + hauteur propre "h" du four (éditeur) — x,z,w,d,échelle,h repris de l'éditeur.
-  [[-20.26,28.36,90,1.4,1,1,1],[-20.28,26.78,90,1.4,1,1,1],[-20.5,42.00,90,1.4,1,1.5,1]].forEach(([x,z,ry,w,d,scale,h])=>microondeFn(x,z,ry,w,d,scale,h));
+  [[-20.26,28.36,90,1.4,1,1,1],[-20.28,26.78,90,1.4,1,1,1],[-20.39,42.09,90,1.1,0.9,1.5,1]].forEach(([x,z,ry,w,d,scale,h])=>microondeFn(x,z,ry,w,d,scale,h)); // 3e four réduit (1.4x1 -> 1.1x0.9) + repositionné (éditeur)
   // tabourets (éditeur) : coin terrasse (hauteurs 1/1.5 m) + coin local informatique
   [[-18,49,0,0.8,1],[-19.5,50.5,270,0.8,1],[-16.5,50.5,90,0.8,1],[-18.08,51.65,180,0.8,1],[-18.02,50.39,180,1.5,1.5],
    [-5.82,38.71,180,1.5,1.5],[-4.24,38.8,90,0.8,1],[-7.38,38.81,270,0.8,1]
@@ -2355,21 +2367,22 @@ function buildServiceRoom(){
   // tables de la terrasse jardin — agrandies de 20% puis 40% (3×1.5 -> 3.6×1.8 -> 5.04×2.52, table basse 2.5×1.6 -> 3×1.92 -> 4.2×2.69)
   [[-11.45,52.8,180,5.04,2.52],[-8.34,52.82,180,5.04,2.52],[6.56,48.9,90,4.2,2.69,0.5]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
-  // tables du coin repas de la cuisine (x2 zones) — agrandies de 20% (3.6×1.8 -> 4.32×2.16) ; le +40%
-  // supplémentaire (6.05×3.02) faisait se chevaucher les tables entre elles (~2.8m) et mordre sur le mur est
-  // (x=-12.24..-12.48) : espace insuffisant dans ce coin, taille reprise à 4.32×2.16 (vérifié sans collision)
-  [[-13.88,28.16,90,4.32,2.16],[-13.89,31.61,90,4.32,2.16],[-13.21,43.05,180,4.32,2.16],[-9.93,43.07,180,4.32,2.16]
+  // tables du coin repas de la cuisine (x2 zones) — agrandies de 20% (3.6×1.8 -> 4.32×2.16), taille conservée.
+  // zone 1 repositionnée (éditeur, x=-14.2) : les 2 tables gardent le même point milieu que la position demandée
+  // (z=29.31/32.5) mais espacées un peu plus (28.54/33.28) car à 4.32 m de long elles se chevauchaient de 1.25 m
+  // à l'espacement d'origine (calculé pour la taille avant agrandissement).
+  [[-14.2,28.54,90,4.32,2.16],[-14.2,33.28,90,4.32,2.16],[-13.21,43.05,180,4.32,2.16],[-9.93,43.07,180,4.32,2.16]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
   // chaises (0.6×0.6 m, éditeur) : salle de formation, inchangées
   [[13.85,36.64,0],[15.29,36.65,0],[16.77,36.7,0],[18.18,36.68,0],[19.55,38.04,90],[19.59,39.18,90],[19.56,40.38,90],[19.57,41.62,90],[19.61,42.72,90],
    [18.45,43.75,180],[17.3,43.8,180],[15.65,43.9,180],[14.05,43.91,180]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.6,0.6));
   // chaises de la terrasse jardin — agrandies de 20% puis 40% (0.6×0.6 -> 0.72×0.72 -> 1.01×1.01)
-  [[-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,270]
+  [[-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,90]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,1.01,1.01));
-  // chaises du coin repas de la cuisine (x2 zones) — agrandies de 20% (0.72×0.72 -> 0.864×0.864), assorties
-  // à la taille de table reprise ci-dessus (le +40% supplémentaire a été annulé, cf. commentaire tables)
-  [[-12.73,27.23,270],[-12.74,28.84,270],[-15.06,28.88,90],[-15.09,27.32,90],[-12.73,30.79,270],[-12.74,32.37,270],[-15.12,30.67,90],[-15.13,32.41,90],
+  // chaises du coin repas de la cuisine (x2 zones) — taille inchangée (0.864×0.864) ; zone 1 repositionnée
+  // (éditeur) avec le même décalage que ses 2 tables (cf. commentaire tables) pour rester autour d'elles
+  [[-12.9,27.90,270],[-12.94,29.34,270],[-15.53,29.38,90],[-15.53,27.97,90],[-12.83,32.57,270],[-12.77,34.03,270],[-15.58,32.58,90],[-15.6,34.03,90],
    [-14.11,41.75,0],[-12.52,41.75,0],[-10.78,41.77,0],[-9.24,41.74,0],[-7.9,43.16,270],[-8.89,44.33,180],[-10.59,44.33,180],[-12.49,44.28,180],[-13.99,44.23,180]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.864,0.864));
   // (les 2 tables rondes cuisine/terrasse ont été retirées du plan — remplacées par les tables rectangulaires ci-dessus)

@@ -558,7 +558,7 @@ function loadModels(){
     }),
     loadGltfModel('models/Queen Palm Tree.glb',5.5).then(obj=>{MODEL_PALM=obj;}),
     loadGltfModel('models/Tree.glb',4.5).then(obj=>{MODEL_TREE=obj;}),
-    loadGltfModel('models/Bushes.glb',0.75,0,'Bush').then(obj=>{MODEL_BUSH=obj;})
+    loadGltfModel('models/Bushes.glb',3.0,0,'Bush').then(obj=>{MODEL_BUSH=obj;}) // 0.75 × 4 (agrandi de 300%)
   ]);
 }
 function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
@@ -2175,11 +2175,11 @@ function buildServiceRoom(){
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
     const isBench=fw>2; // le "banc" (appel avec w≈4.1) devient un canapé de jardin, les autres restent des chaises longues
     if(isBench && MODEL_LSOFA){
-      const m=MODEL_LSOFA.clone(true);m.scale.set(fw/LSOFA_W,1,fd/LSOFA_D);g.add(m);
+      const m=MODEL_LSOFA.clone(true);m.scale.set(fw/LSOFA_W,1,fd/LSOFA_D);m.rotation.y=Math.PI;g.add(m);
       return;
     }
     if(!isBench && MODEL_LCHAIR){
-      const m=MODEL_LCHAIR.clone(true);m.scale.set(fw/LCHAIR_W,1,fd/LCHAIR_D);g.add(m);
+      const m=MODEL_LCHAIR.clone(true);m.scale.set(fw/LCHAIR_W,1,fd/LCHAIR_D);m.rotation.y=Math.PI;g.add(m);
       return;
     }
     const mat=new THREE.MeshStandardMaterial({color:0xb08d57,roughness:.9});

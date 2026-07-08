@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[];
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink){
   sink=sink||0;
@@ -527,7 +527,12 @@ function loadModels(){
     loadGltfModel('models/Water Cooler.glb',1.3).then(obj=>{MODEL_COOLER=obj;}),
     loadGltfModel('models/Standing Desk.glb',1.5).then(obj=>{MODEL_STANDDESK=obj;}), // gabarit unitaire, remis à l'échelle par instance (footprint du bureau conservé)
     loadGltfModel('models/Table.glb',0.74).then(obj=>{MODEL_TABLE=obj;}), // gabarit unitaire, remis à l'échelle par instance
-    loadGltfModel('models/Chair.glb',0.85).then(obj=>{MODEL_CHAIR2=obj;}) // gabarit unitaire, remis à l'échelle par instance
+    loadGltfModel('models/Chair.glb',0.85).then(obj=>{MODEL_CHAIR2=obj;}), // gabarit unitaire, remis à l'échelle par instance
+    // 4 voitures du parking (hauteurs calibrées pour ~4.3 m de long chacune, proportions natives différentes)
+    loadGltfModel('models/Car.glb',1.488).then(obj=>{if(obj)MODEL_CARS[0]=obj;}),
+    loadGltfModel('models/car1.glb',1.341).then(obj=>{if(obj)MODEL_CARS[1]=obj;}),
+    loadGltfModel('models/car2.glb',1.561).then(obj=>{if(obj)MODEL_CARS[2]=obj;}),
+    loadGltfModel('models/car3.glb',1.839).then(obj=>{if(obj)MODEL_CARS[3]=obj;})
   ]);
 }
 function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
@@ -2148,7 +2153,7 @@ function buildServiceRoom(){
     if(MODEL_COOLER){
       // échelle UNIFORME (pas d'étirement en largeur/profondeur) : la fontaine est un objet fin et haut,
       // contrairement au distributeur en boîte qu'elle remplace — l'étirer sur bw/bd l'écrasait à plat.
-      const m=MODEL_COOLER.clone(true);const cs=(bh/1.3)*3.5*0.25;m.scale.set(cs,cs,cs);m.rotation.y=Math.PI/2;g.add(m);
+      const m=MODEL_COOLER.clone(true);const cs=4.0/1.3;m.scale.set(cs,cs,cs);m.rotation.y=Math.PI/2;g.add(m); // hauteur cible ~4 m (retour utilisateur avec annotation visuelle)
     } else {
       const body=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),new THREE.MeshStandardMaterial({color:0x3a6ea5,roughness:.4,metalness:.3}));body.position.y=bh/2;g.add(body);
       const panel=new THREE.Mesh(new THREE.PlaneGeometry(bw*0.67,bh*0.5),new THREE.MeshStandardMaterial({color:0x1a2a3a,roughness:.2}));panel.position.set(0,bh*0.61,bd/2+0.01);g.add(panel);
@@ -2393,15 +2398,21 @@ function buildExterior(){
   const star=emojiSprite('⭐',1.1);star.position.set(ASSEMBLY.x,4.4,ASSEMBLY.z);scene.add(star);
   buildParking();
 }
-function car(x,z,ry,col){ // voiture low-poly
-  const g=new THREE.Group();
+function car(x,z,ry,col,idx){ // voiture : modèle 3D si chargé (4 modèles cyclés via idx), sinon primitive low-poly
+  const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=ry;scene.add(g);
+  const pool=MODEL_CARS.filter(Boolean); // certains modèles ont pu échouer au chargement : on ne cycle que sur ceux disponibles
+  if(pool.length){
+    const m=pool[(idx||0)%pool.length].clone(true);
+    m.rotation.y=-Math.PI/2; // le modèle est long selon +Z (avant), on l'aligne sur l'axe X de la place de parking
+    g.add(m);
+    return;
+  }
   const paint=new THREE.MeshStandardMaterial({color:col,roughness:.45,metalness:.3});
   const glass=new THREE.MeshStandardMaterial({color:0x1b2630,roughness:.25,metalness:.5});
   const body=new THREE.Mesh(new THREE.BoxGeometry(4.1,0.6,1.8),paint);body.position.y=0.62;body.castShadow=true;g.add(body);
   const cabin=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.55,1.62),glass);cabin.position.set(-0.15,1.13,0);g.add(cabin);
   const tire=new THREE.MeshStandardMaterial({color:0x111316,roughness:.85});const wg=new THREE.CylinderGeometry(0.34,0.34,0.26,12);
   [[-1.25,0.78],[1.25,0.78],[-1.25,-0.78],[1.25,-0.78]].forEach(([wx,wz])=>{const w=new THREE.Mesh(wg,tire);w.rotation.x=Math.PI/2;w.position.set(wx,0.34,wz);g.add(w);});
-  g.position.set(x,0,z);g.rotation.y=ry;scene.add(g);
 }
 function tree(x,z){
   const t=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.24,1.5,8),new THREE.MeshStandardMaterial({color:0x6b4a2b,roughness:.9}));t.position.set(x,0.75,z);scene.add(t);
@@ -2463,7 +2474,7 @@ function buildParking(){
     const p=new THREE.Mesh(new THREE.PlaneGeometry(w,d),pmrMat);p.rotation.x=-Math.PI/2;p.position.y=0.015;g.add(p);
   });
   PARKING_NORMAL.forEach(([px,pz,rotDeg,w,d])=>stallLines(px,pz,rotDeg,w,d));
-  PARKING_CARS.forEach(([px,pz,rotDeg],i)=>car(px,pz,rotDeg*Math.PI/180,carCols[i%carCols.length]));
+  PARKING_CARS.forEach(([px,pz,rotDeg],i)=>car(px,pz,rotDeg*Math.PI/180,carCols[i%carCols.length],i));
   BUISSONS.forEach(([bx,bz])=>bush(bx,bz));
   // passage piéton (zébra) vers le point de rassemblement
   for(let i=0;i<6;i++){const s=new THREE.Mesh(new THREE.PlaneGeometry(0.55,3.2),line);s.rotation.x=-Math.PI/2;s.position.set(29.5+i*0.95,0.025,-14);scene.add(s);}

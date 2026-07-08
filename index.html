@@ -525,7 +525,12 @@ function loadModels(){
     loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
     loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}), // gabarit unitaire, remis à l'échelle par instance
     loadGltfModel('models/Water Cooler.glb',1.3).then(obj=>{MODEL_COOLER=obj;}),
-    loadGltfModel('models/Standing Desk.glb',1.5).then(obj=>{MODEL_STANDDESK=obj;}), // gabarit unitaire, remis à l'échelle par instance (footprint du bureau conservé)
+    loadGltfModel('models/Standing Desk.glb',1.5).then(obj=>{
+      MODEL_STANDDESK=obj;
+      if(obj){ // bureaux clairs (le modèle est gris foncé/noir par défaut)
+        obj.traverse(n=>{ if(n.isMesh && n.material) n.material.color.setHex(0xe8e4da); });
+      }
+    }), // gabarit unitaire, remis à l'échelle par instance (footprint du bureau conservé)
     loadGltfModel('models/Table.glb',0.74).then(obj=>{MODEL_TABLE=obj;}), // gabarit unitaire, remis à l'échelle par instance
     loadGltfModel('models/Chair.glb',0.85).then(obj=>{MODEL_CHAIR2=obj;}), // gabarit unitaire, remis à l'échelle par instance
     // 4 voitures du parking (hauteurs calibrées pour ~4.3 m de long chacune, proportions natives différentes)
@@ -2100,7 +2105,7 @@ function buildServiceRoom(){
     const ew=w||0.9, ed=d||0.6;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
     if(MODEL_CSINK){ // évier meuble complet : posé au sol, hauteur déjà calibrée pour aligner la vasque sur WORKTOP_H
-      g.add(MODEL_CSINK.clone(true));
+      const m=MODEL_CSINK.clone(true);m.rotation.y=-Math.PI/2;g.add(m); // tourné 90° à gauche
       return;
     }
     const cab=new THREE.Mesh(new THREE.BoxGeometry(ew,0.82,ed),new THREE.MeshStandardMaterial({color:0xe8e4da,roughness:.6}));cab.position.y=0.41;g.add(cab);
@@ -2153,7 +2158,7 @@ function buildServiceRoom(){
     if(MODEL_COOLER){
       // échelle UNIFORME (pas d'étirement en largeur/profondeur) : la fontaine est un objet fin et haut,
       // contrairement au distributeur en boîte qu'elle remplace — l'étirer sur bw/bd l'écrasait à plat.
-      const m=MODEL_COOLER.clone(true);const cs=4.0/1.3;m.scale.set(cs,cs,cs);m.rotation.y=Math.PI/2;g.add(m); // hauteur cible ~4 m (retour utilisateur avec annotation visuelle)
+      const m=MODEL_COOLER.clone(true);const cs=4.0/1.3;m.scale.set(cs,cs,cs);m.rotation.y=Math.PI;g.add(m); // hauteur ~4 m, tournée 90° à droite en plus de son orientation précédente
     } else {
       const body=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),new THREE.MeshStandardMaterial({color:0x3a6ea5,roughness:.4,metalness:.3}));body.position.y=bh/2;g.add(body);
       const panel=new THREE.Mesh(new THREE.PlaneGeometry(bw*0.67,bh*0.5),new THREE.MeshStandardMaterial({color:0x1a2a3a,roughness:.2}));panel.position.set(0,bh*0.61,bd/2+0.01);g.add(panel);
@@ -2398,12 +2403,17 @@ function buildExterior(){
   const star=emojiSprite('⭐',1.1);star.position.set(ASSEMBLY.x,4.4,ASSEMBLY.z);scene.add(star);
   buildParking();
 }
+const CAR_PAINT_NAME=['LightBlue','Body','White','Mat']; // nom du matériau carrosserie par modèle (Car/car1/car2/car3), pour recolorer chaque instance
 function car(x,z,ry,col,idx){ // voiture : modèle 3D si chargé (4 modèles cyclés via idx), sinon primitive low-poly
   const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=ry;scene.add(g);
   const pool=MODEL_CARS.filter(Boolean); // certains modèles ont pu échouer au chargement : on ne cycle que sur ceux disponibles
   if(pool.length){
-    const m=pool[(idx||0)%pool.length].clone(true);
+    const modelIdx=(idx||0)%pool.length;
+    const m=pool[modelIdx].clone(true);
     m.rotation.y=-Math.PI/2; // le modèle est long selon +Z (avant), on l'aligne sur l'axe X de la place de parking
+    // couleur différente par voiture : on clone le matériau carrosserie pour ne pas teinter les autres instances du même modèle
+    const paintName=CAR_PAINT_NAME[modelIdx];
+    m.traverse(n=>{ if(n.isMesh && n.material && n.material.name===paintName){ n.material=n.material.clone(); n.material.color.setHex(col); } });
     g.add(m);
     return;
   }

@@ -566,7 +566,7 @@ function loadModels(){
     }),
     loadGltfModel('models/Queen Palm Tree.glb',5.5).then(obj=>{MODEL_PALM=obj;}),
     loadGltfModel('models/Tree.glb',4.5).then(obj=>{MODEL_TREE=obj;}),
-    loadGltfModel('models/Bushes.glb',3.0,0.45,'Bush').then(obj=>{MODEL_BUSH=obj;}) // 0.75 × 4 (agrandi de 300%) ; enfoncé de 0.45m : le feuillage arrondi ne touchait le sol qu'au centre, les bords semblaient flotter
+    loadGltfModel('models/Bushes.glb',3.0,1.5,'Bush').then(obj=>{MODEL_BUSH=obj;}) // 0.75 × 4 (agrandi de 300%) ; enfoncé de 1.5m : le feuillage arrondi ne touchait le sol qu'au centre, les bords semblaient flotter
   ]);
 }
 function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si chargé, sinon primitives (bras+écran)
@@ -2271,15 +2271,22 @@ function buildServiceRoom(){
   annexFloor.rotation.x=-Math.PI/2;annexFloor.position.set(annexCX,0.01,annexCZ);annexFloor.receiveShadow=true;scene.add(annexFloor);
   const annexCeil=new THREE.Mesh(new THREE.PlaneGeometry(annexW,annexD),new THREE.MeshStandardMaterial({map:repeatTex(ceilingTex(),annexW/2,annexD/2),color:0xf4f6f9,roughness:.9}));
   annexCeil.rotation.x=Math.PI/2;annexCeil.position.set(annexCX,H,annexCZ);scene.add(annexCeil);
-  // terrasse jardin : dalles de bois du mur ouest (-21) jusqu'au bord est de la pergola (~9.29, pergola centrée en x=6.64,
-  // largeur 5.3), puis pelouse jusqu'au mur est (20.05) — repère x0=mur ouest, xSplit=bord pergola, x1=mur est.
-  const gz0=45, gz1=55.2, gx0=-21, gx1=20.05, xSplit=9.29;
-  const deckW=xSplit-gx0, deckCX=gx0+deckW/2;
-  const lawnW=gx1-xSplit, lawnCX=xSplit+lawnW/2;
+  // terrasse jardin : dalles de bois sur toute la surface, avec une zone de gazon en forme organique
+  // (validée sur plan avec l'éditeur) posée par-dessus : bord est (parking) + bulle autour de la pergola/palmier,
+  // en laissant les tables à manger (côté ouest, z>51.5) sur dalle de bois.
+  const gz0=45, gz1=55.2, gx0=-21, gx1=20.05;
+  const deckW=gx1-gx0, deckCX=gx0+deckW/2;
   const deck=new THREE.Mesh(new THREE.PlaneGeometry(deckW,gz1-gz0),new THREE.MeshStandardMaterial({map:repeatTex(woodDeckTex(),deckW/1.6,(gz1-gz0)/1.6),roughness:.75}));
   deck.rotation.x=-Math.PI/2;deck.position.set(deckCX,0.006,(gz0+gz1)/2);deck.receiveShadow=true;scene.add(deck);
-  const grass=new THREE.Mesh(new THREE.PlaneGeometry(lawnW,gz1-gz0),new THREE.MeshStandardMaterial({color:0x5a8a4a,roughness:1}));
-  grass.rotation.x=-Math.PI/2;grass.position.set(lawnCX,0.005,(gz0+gz1)/2);grass.receiveShadow=true;scene.add(grass);
+  // contour du gazon en (x,z) monde, sens direct ; converti en points de Shape (x,-z) car une rotation -90°
+  // autour de X envoie l'axe local Y vers -Z monde (cf. commentaire loadGltfModel pour le repère général).
+  const LAWN_PTS=[
+    [-4,45],[-5,46.5],[-2,48],[1,47.5],[4,49.5],[7,50],[9.29,51.5],
+    [9.29,55.2],[gx1,55.2],[gx1,45]
+  ];
+  const lawnShape=new THREE.Shape(LAWN_PTS.map(([x,z])=>new THREE.Vector2(x,-z)));
+  const grass=new THREE.Mesh(new THREE.ShapeGeometry(lawnShape),new THREE.MeshStandardMaterial({color:0x5a8a4a,roughness:1}));
+  grass.rotation.x=-Math.PI/2;grass.position.set(0,0.007,0);grass.receiveShadow=true;scene.add(grass);
   // éclairage des pièces
   [[-6.72,28.5],[-6.73,34.8],[-16.69,30.8],[-12.25,41.2],[7.2,29.4],[7.67,39.9],[15.4,39.9],[17.6,29.4],[1.1,41.2],[1.68,30.7],[13.08,29.4]].forEach(([lx,lz])=>{
     const pl=new THREE.PointLight(0xfff3da,0.45,14);pl.position.set(lx,H-0.6,lz);scene.add(pl);
@@ -2346,8 +2353,10 @@ function buildServiceRoom(){
   // tables de la terrasse jardin — agrandies de 20% puis 40% (3×1.5 -> 3.6×1.8 -> 5.04×2.52, table basse 2.5×1.6 -> 3×1.92 -> 4.2×2.69)
   [[-11.45,52.8,180,5.04,2.52],[-8.34,52.82,180,5.04,2.52],[6.56,48.9,90,4.2,2.69,0.5]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
-  // tables du coin repas de la cuisine (x2 zones) — agrandies de 20% puis 40% (3.6×1.8 -> 4.32×2.16 -> 6.05×3.02)
-  [[-13.88,28.16,90,6.05,3.02],[-13.89,31.61,90,6.05,3.02],[-13.21,43.05,180,6.05,3.02],[-9.93,43.07,180,6.05,3.02]
+  // tables du coin repas de la cuisine (x2 zones) — agrandies de 20% (3.6×1.8 -> 4.32×2.16) ; le +40%
+  // supplémentaire (6.05×3.02) faisait se chevaucher les tables entre elles (~2.8m) et mordre sur le mur est
+  // (x=-12.24..-12.48) : espace insuffisant dans ce coin, taille reprise à 4.32×2.16 (vérifié sans collision)
+  [[-13.88,28.16,90,4.32,2.16],[-13.89,31.61,90,4.32,2.16],[-13.21,43.05,180,4.32,2.16],[-9.93,43.07,180,4.32,2.16]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
   // chaises (0.6×0.6 m, éditeur) : salle de formation, inchangées
   [[13.85,36.64,0],[15.29,36.65,0],[16.77,36.7,0],[18.18,36.68,0],[19.55,38.04,90],[19.59,39.18,90],[19.56,40.38,90],[19.57,41.62,90],[19.61,42.72,90],
@@ -2356,10 +2365,11 @@ function buildServiceRoom(){
   // chaises de la terrasse jardin — agrandies de 20% puis 40% (0.6×0.6 -> 0.72×0.72 -> 1.01×1.01)
   [[-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,270]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,1.01,1.01));
-  // chaises du coin repas de la cuisine (x2 zones) — agrandies de 20% puis 40% (0.72×0.72 -> 0.864×0.864 -> 1.21×1.21)
+  // chaises du coin repas de la cuisine (x2 zones) — agrandies de 20% (0.72×0.72 -> 0.864×0.864), assorties
+  // à la taille de table reprise ci-dessus (le +40% supplémentaire a été annulé, cf. commentaire tables)
   [[-12.73,27.23,270],[-12.74,28.84,270],[-15.06,28.88,90],[-15.09,27.32,90],[-12.73,30.79,270],[-12.74,32.37,270],[-15.12,30.67,90],[-15.13,32.41,90],
    [-14.11,41.75,0],[-12.52,41.75,0],[-10.78,41.77,0],[-9.24,41.74,0],[-7.9,43.16,270],[-8.89,44.33,180],[-10.59,44.33,180],[-12.49,44.28,180],[-13.99,44.23,180]
-  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,1.21,1.21));
+  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.864,0.864));
   // (les 2 tables rondes cuisine/terrasse ont été retirées du plan — remplacées par les tables rectangulaires ci-dessus)
   tvFn(10.99,39.76,90,3.4,2);
   canapeFn(19.19,28.44,90);

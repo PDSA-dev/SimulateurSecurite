@@ -479,7 +479,7 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null,MODEL_COFFEE=null,MODEL_COFFEE2=null,MODEL_MUGS=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null,MODEL_COFFEE=null,MODEL_COFFEE2=null,MODEL_MUGS=null,MODEL_CORKBOARD=null,MODEL_WHITEBOARD=null;
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink,keepOnly){
   sink=sink||0;
@@ -541,6 +541,8 @@ function loadModels(){
     loadGltfModel('models/Coffee Machine.glb',0.525).then(obj=>{MODEL_COFFEE=obj;}), // 0.35 × 1.5 (agrandi de 150%)
     loadGltfModel('models/Coffee Machine-2.glb',0.57).then(obj=>{MODEL_COFFEE2=obj;}), // 0.38 × 1.5 (agrandi de 150%)
     loadGltfModel('models/Mugs.glb',0.165).then(obj=>{MODEL_MUGS=obj;}), // 0.11 × 1.5 (agrandi de 150%)
+    loadGltfModel('models/Cork Board.glb',0.9).then(obj=>{MODEL_CORKBOARD=obj;}),
+    loadGltfModel('models/Whiteboard.glb',1.5).then(obj=>{MODEL_WHITEBOARD=obj;}),
     loadGltfModel('models/Refrigirator.glb',3.36).then(obj=>{MODEL_FRIDGE=obj;}), // 2.8 × 1.2 (agrandi de 20%)
     loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
     loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}), // gabarit unitaire, remis à l'échelle par instance
@@ -1937,9 +1939,10 @@ function buildCorridorDecor(){
   bin.position.set(19,0.36,23.2);bin.castShadow=true;scene.add(bin);
   const binTop=new THREE.Mesh(new THREE.CylinderGeometry(0.29,0.27,0.06,16),new THREE.MeshStandardMaterial({color:0x6b7178}));
   binTop.position.set(19,0.72,23.2);scene.add(binTop);
-  // panneau liège, mur ouest du couloir, avant l'entrée de la cuisine (porte à x=-14.61)
-  const cork=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.05),new THREE.MeshStandardMaterial({map:corkboardTex(),roughness:.8}));
-  cork.position.set(-21.92,1.6,22.5);cork.rotation.y=Math.PI/2;scene.add(cork);
+  // panneau liège (modèle Cork Board.glb), mur ouest du couloir, avant l'entrée de la cuisine (porte à x=-14.61)
+  const corkG=new THREE.Group();corkG.position.set(-21.92,1.6,22.5);corkG.rotation.y=0;scene.add(corkG); // le modèle fait déjà face à +X nativement
+  if(MODEL_CORKBOARD){ corkG.add(MODEL_CORKBOARD.clone(true)); }
+  else{ const cork=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.05),new THREE.MeshStandardMaterial({map:corkboardTex(),roughness:.8}));corkG.add(cork); }
 }
 function cutoffTex(){
   const c=document.createElement('canvas');c.width=128;c.height=160;const g=c.getContext('2d');
@@ -2495,10 +2498,14 @@ function buildOpenSpaceDecor(){
   // (armoires basses désormais en bout d'îlot, voir pod())
   // « TGV Care Beziers » peint au mur (au-dessus du coin canapé) — décalé de 8 à 9.5 pour ne plus chevaucher l'horloge (x=4.5, largeur 3.2)
   signPlane("TGV Care Beziers",9.5,4.6,ZW,Math.PI,4.4,"#cd0037"); // plaque plate au mur (face -z), au-dessus du canapé
-  // tableaux blancs : "objectifs du jour" (sous l'horloge) + un whiteboard libre (open space) ; descendus de 3.6 à 3.35
+  // tableau "objectifs du jour" (sous l'horloge, texte peint) ; descendu de 3.6 à 3.35
   const wbMat=new THREE.MeshStandardMaterial({map:whiteboardTex(),roughness:.4});
-  const blankWbMat=new THREE.MeshStandardMaterial({map:blankWhiteboardTex(),roughness:.4});
-  [[4.5,3.35,wbMat],[11,3.35,blankWbMat]].forEach(([x,y,mat])=>{const wb=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),mat);wb.position.set(x,y,ZW);wb.rotation.y=Math.PI;scene.add(wb);});
+  const wb=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),wbMat);wb.position.set(4.5,3.35,ZW);wb.rotation.y=Math.PI;scene.add(wb);
+  // whiteboard libre (modèle Whiteboard.glb), à la place du 2e tableau "objectifs du jour" ; descendu de 3.6 à 3.35
+  const wb2G=new THREE.Group();wb2G.position.set(11,3.35,ZW);wb2G.rotation.y=Math.PI/2;scene.add(wb2G); // le modèle fait face à ±X nativement, pas ±Z
+  if(MODEL_WHITEBOARD){ wb2G.add(MODEL_WHITEBOARD.clone(true)); }
+  else{ const blankWbMat=new THREE.MeshStandardMaterial({map:blankWhiteboardTex(),roughness:.4});
+    const wb2=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),blankWbMat);wb2G.add(wb2); }
   // horloge numérique (bandeau LED rouge), au-dessus du tableau "OBJECTIFS DU JOUR" près de la porte d'entrée
   clockLedTex=ledTex("");
   const led=new THREE.Mesh(new THREE.BoxGeometry(3.2,0.55,0.1),new THREE.MeshBasicMaterial({map:clockLedTex}));

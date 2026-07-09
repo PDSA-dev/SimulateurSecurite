@@ -823,6 +823,29 @@ function whiteboardTex(){ // tableau blanc avec écritures effacées
   g.strokeStyle='#aeb4bf';g.lineWidth=5;g.strokeRect(2,2,252,166);
   return new THREE.CanvasTexture(c);
 }
+function blankWhiteboardTex(){ // tableau blanc "libre" (sans titre), pour l'open space
+  const c=document.createElement('canvas');c.width=256;c.height=170;const g=c.getContext('2d');
+  g.fillStyle='#fbfbfc';g.fillRect(0,0,256,170);
+  g.strokeStyle='rgba(90,100,120,.25)';g.lineWidth=2;
+  for(let i=0;i<4;i++){g.beginPath();g.moveTo(14,34+i*26);g.lineTo(14+Math.random()*150+30,34+i*26);g.stroke();}
+  g.fillStyle='rgba(255,255,255,.5)';g.fillRect(160,50,60,35); // reflet
+  g.strokeStyle='#aeb4bf';g.lineWidth=5;g.strokeRect(2,2,252,166);
+  return new THREE.CanvasTexture(c);
+}
+function corkboardTex(){ // panneau liège avec quelques papiers punaisés
+  const c=document.createElement('canvas');c.width=256;c.height=170;const g=c.getContext('2d');
+  g.fillStyle='#c68a4e';g.fillRect(0,0,256,170);
+  for(let i=0;i<300;i++){g.fillStyle='rgba(0,0,0,'+(Math.random()*0.08)+')';g.fillRect(Math.random()*256,Math.random()*170,2,2);}
+  [[20,20,60,40,-4],[110,15,55,38,3],[170,72,60,42,-2],[30,92,52,36,5]].forEach(([px,py,pw,ph,rot])=>{
+    g.save();g.translate(px+pw/2,py+ph/2);g.rotate(rot*Math.PI/180);
+    g.fillStyle='#f7f3e8';g.fillRect(-pw/2,-ph/2,pw,ph);
+    g.strokeStyle='rgba(0,0,0,.15)';g.lineWidth=1;g.strokeRect(-pw/2,-ph/2,pw,ph);
+    g.restore();
+    g.fillStyle='#c0392b';g.beginPath();g.arc(px+pw/2,py+3,3,0,7);g.fill();
+  });
+  g.strokeStyle='#7a5230';g.lineWidth=8;g.strokeRect(4,4,248,162);
+  return new THREE.CanvasTexture(c);
+}
 function flagTex(ch){ // fanion de guirlande BIENVENUE
   const c=document.createElement('canvas');c.width=64;c.height=80;const g=c.getContext('2d');
   g.fillStyle='#fffdf7';g.beginPath();g.moveTo(2,2);g.lineTo(62,2);g.lineTo(62,56);g.lineTo(32,76);g.lineTo(2,56);g.closePath();g.fill();
@@ -1914,6 +1937,9 @@ function buildCorridorDecor(){
   bin.position.set(19,0.36,23.2);bin.castShadow=true;scene.add(bin);
   const binTop=new THREE.Mesh(new THREE.CylinderGeometry(0.29,0.27,0.06,16),new THREE.MeshStandardMaterial({color:0x6b7178}));
   binTop.position.set(19,0.72,23.2);scene.add(binTop);
+  // panneau liège, mur ouest du couloir, avant l'entrée de la cuisine (porte à x=-14.61)
+  const cork=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.05),new THREE.MeshStandardMaterial({map:corkboardTex(),roughness:.8}));
+  cork.position.set(-21.92,1.6,22.5);cork.rotation.y=Math.PI/2;scene.add(cork);
 }
 function cutoffTex(){
   const c=document.createElement('canvas');c.width=128;c.height=160;const g=c.getContext('2d');
@@ -2126,11 +2152,11 @@ function buildServiceRoom(){
     const along=Math.abs(Math.cos((ry||0)*Math.PI/180))>0.5, hw=tw/2+0.06, hd=td/2+0.06;
     COLLIDERS.push({minX:x-(along?hw:hd),maxX:x+(along?hw:hd),minZ:z-(along?hd:hw),maxZ:z+(along?hd:hw),type:'desk'});
   };
-  const chaiseFn=(x,z,ry,w,d)=>{
+  const chaiseFn=(x,z,ry,w,d,hs)=>{ // hs = échelle de hauteur (1 par défaut) ; utile car étirer juste w/d aplatit visuellement la chaise
     const cw=w||0.42, cd=d||0.42;
     const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=(ry||0)*Math.PI/180;scene.add(g);
     if(MODEL_CHAIR2){
-      const m=MODEL_CHAIR2.clone(true);m.scale.set(cw/CHAIR2_W,1,cd/CHAIR2_D);g.add(m);
+      const m=MODEL_CHAIR2.clone(true);m.scale.set(cw/CHAIR2_W,hs||1,cd/CHAIR2_D);g.add(m);
       return;
     }
     const mat=new THREE.MeshStandardMaterial({color:0x8a6d4f,roughness:.7});
@@ -2340,7 +2366,7 @@ function buildServiceRoom(){
   [[-2.92,31.16,180,1.5,1.5],[5.86,28.12,180,1.5,1.5],[5.88,29.89,0,1.5,1.5]].forEach(([x,z,ry,w,d])=>lavaboFn(x,z,ry,w,d));
   evierFn(-20.13,31.89,90,1.8,1.4); // évier de cuisine (éditeur) — remplace l'ancien lavabo posé en cuisine
   // cafetières + mugs sur le plan de travail, à gauche de l'évier (côté sud, z>évier) sur le 3e plan de travail (x=-20.12,z=34.81)
-  petitObjetPlanFn(MODEL_COFFEE,-20.12,33.3,180,0x2a2a2a,0.25,0.35,0.22); // pivotée de 90° (poignée vers la salle)
+  petitObjetPlanFn(MODEL_COFFEE,-20.12,33.3,0,0x2a2a2a,0.25,0.35,0.22); // pivotée de 90° puis 180° (poignée vers la salle, confirmé en jeu)
   petitObjetPlanFn(MODEL_COFFEE2,-20.12,34.1,90,0x3a3a3a,0.22,0.32,0.2);
   petitObjetPlanFn(MODEL_MUGS,-20.12,34.9,90,0xf0f0f0,0.15,0.1,0.15);
   [[-11.34,30.18,270,1.5,1.5],[-11.36,26.08,270,1.5,1.5],[10.08,25.41,90,1.5,1.5],[9.73,29.96,0,1.5,1.5]].forEach(([x,z,ry,w,d])=>wcFn(x,z,ry,w,d));
@@ -2371,7 +2397,8 @@ function buildServiceRoom(){
   // zone 1 repositionnée à nouveau (éditeur, x=-14.34, z=31.94/35.19) : même point milieu conservé (33.565) mais
   // espacées un peu plus (31.20/35.93) — à 4.32 m de long, l'espacement demandé (calculé sur l'éditeur qui affiche
   // encore l'ancienne taille 3×1.5 à cause d'un cache local non rafraîchi) les faisait se chevaucher de 1.25 m.
-  [[-14.34,31.20,90,4.32,2.16],[-14.34,35.93,90,4.32,2.16],[-13.21,43.05,180,4.32,2.16],[-9.93,43.07,180,4.32,2.16]
+  // hauteur remontée à 0.85 (défaut 0.74) : à cette largeur/profondeur, la hauteur d'origine faisait paraître les tables écrasées
+  [[-14.34,31.20,90,4.32,2.16,0.85],[-14.34,35.93,90,4.32,2.16,0.85],[-13.21,43.05,180,4.32,2.16,0.85],[-9.93,43.07,180,4.32,2.16,0.85]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
   // chaises (0.6×0.6 m, éditeur) : salle de formation, inchangées
   [[13.85,36.64,0],[15.29,36.65,0],[16.77,36.7,0],[18.18,36.68,0],[19.55,38.04,90],[19.59,39.18,90],[19.56,40.38,90],[19.57,41.62,90],[19.61,42.72,90],
@@ -2380,11 +2407,12 @@ function buildServiceRoom(){
   // chaises de la terrasse jardin — agrandies de 20% puis 40% (0.6×0.6 -> 0.72×0.72 -> 1.01×1.01)
   [[-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,90]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,1.01,1.01));
-  // chaises du coin repas de la cuisine (x2 zones) — taille inchangée (0.864×0.864) ; zone 1 repositionnée
+  // chaises du coin repas de la cuisine (x2 zones) — largeur/profondeur inchangées (0.864×0.864), hauteur ×1.4
+  // (le modèle n'était pas du tout mis à l'échelle en Y, ce qui les faisait paraître écrasées) ; zone 1 repositionnée
   // à nouveau (éditeur) avec le même décalage que ses 2 tables (cf. commentaire tables) pour rester autour d'elles
   [[-13.08,30.83,270],[-13.08,32.06,270],[-15.63,32.10,90],[-15.60,30.86,90],[-13.04,35.43,270],[-13.07,36.54,270],[-15.61,35.40,90],[-15.57,36.58,90],
    [-14.11,41.75,0],[-12.52,41.75,0],[-10.78,41.77,0],[-9.24,41.74,0],[-7.9,43.16,270],[-8.89,44.33,180],[-10.59,44.33,180],[-12.49,44.28,180],[-13.99,44.23,180]
-  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.864,0.864));
+  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.864,0.864,1.4));
   // (les 2 tables rondes cuisine/terrasse ont été retirées du plan — remplacées par les tables rectangulaires ci-dessus)
   tvFn(10.99,39.76,90,3.4,2);
   canapeFn(19.19,28.44,90);
@@ -2465,11 +2493,12 @@ function buildOpenSpaceDecor(){
     fl.position.set(fx,y0-sag,z0);scene.add(fl);
   }
   // (armoires basses désormais en bout d'îlot, voir pod())
-  // « TGV Care Beziers » peint au mur (au-dessus du coin canapé)
-  signPlane("TGV Care Beziers",8,4.6,ZW,Math.PI,4.4,"#cd0037"); // plaque plate au mur (face -z), au-dessus du canapé
-  // tableaux blancs
+  // « TGV Care Beziers » peint au mur (au-dessus du coin canapé) — décalé de 8 à 9.5 pour ne plus chevaucher l'horloge (x=4.5, largeur 3.2)
+  signPlane("TGV Care Beziers",9.5,4.6,ZW,Math.PI,4.4,"#cd0037"); // plaque plate au mur (face -z), au-dessus du canapé
+  // tableaux blancs : "objectifs du jour" (sous l'horloge) + un whiteboard libre (open space) ; descendus de 3.6 à 3.35
   const wbMat=new THREE.MeshStandardMaterial({map:whiteboardTex(),roughness:.4});
-  [[4.5,3.6],[11,3.6]].forEach(([x,y])=>{const wb=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),wbMat);wb.position.set(x,y,ZW);wb.rotation.y=Math.PI;scene.add(wb);});
+  const blankWbMat=new THREE.MeshStandardMaterial({map:blankWhiteboardTex(),roughness:.4});
+  [[4.5,3.35,wbMat],[11,3.35,blankWbMat]].forEach(([x,y,mat])=>{const wb=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),mat);wb.position.set(x,y,ZW);wb.rotation.y=Math.PI;scene.add(wb);});
   // horloge numérique (bandeau LED rouge), au-dessus du tableau "OBJECTIFS DU JOUR" près de la porte d'entrée
   clockLedTex=ledTex("");
   const led=new THREE.Mesh(new THREE.BoxGeometry(3.2,0.55,0.1),new THREE.MeshBasicMaterial({map:clockLedTex}));

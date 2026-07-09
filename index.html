@@ -1574,7 +1574,7 @@ function buildDoors(){
     const horiz=(d.wall==='south'||d.wall==='north');     // porte le long de X
     const inward=(d.wall==='south'||d.wall==='east')?-1:1;  // direction vers l'intérieur
     if(d.type==='access'){ buildAccessDoor(p,horiz,inward); return; }
-    buildSecoursDoor(p,inward);
+    buildSecoursDoor(p);
   });
 }
 function exitTex(){
@@ -1586,9 +1586,10 @@ function exitTex(){
   g.strokeStyle='#fff';g.lineWidth=8;g.beginPath();g.moveTo(196,48);g.lineTo(236,48);g.moveTo(222,34);g.lineTo(238,48);g.lineTo(222,62);g.stroke();
   return new THREE.CanvasTexture(c);
 }
-function buildSecoursDoor(p){
-  // Porte de secours SIMPLE (1 vantail) sur le mur EST (x=22), ouverture z=-15.5..-12.5.
-  const x=p.x, z0=-15.5, z1=-12.5, cz=(z0+z1)/2, H=4.2, doorH=3.15, dw=1.5;
+function buildSecoursDoor(p,zc,ow){
+  // Porte de secours SIMPLE (1 vantail) sur un mur EST (x constant). Réutilisable : zc=centre de l'ouverture,
+  // ow=largeur de l'ouverture (par défaut : mur est de l'open space, x=22, ouverture z=-15.5..-12.5).
+  const x=p.x, cz=zc!=null?zc:-14, half=(ow!=null?ow:3)/2, z0=cz-half, z1=cz+half, H=4.2, doorH=3.15, dw=1.5;
   const za=cz-dw/2, zb=cz+dw/2;
   const frameMat=new THREE.MeshStandardMaterial({color:0x70788a,metalness:.55,roughness:.45});
   const leafMat =new THREE.MeshStandardMaterial({color:0xe2e7ee,metalness:.3,roughness:.5});
@@ -1639,6 +1640,9 @@ function buildAccessDoor(p,horiz,inward){
   // montants fixes (jambages latéraux uniquement — pas de barre centrale) + linteau
   [z0,z1].forEach(z=>{const fr=new THREE.Mesh(new THREE.BoxGeometry(0.12,4.2,0.12),frame);fr.position.set(p.x,2.1,z);scene.add(fr);});
   const lint=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.16,z1-z0+0.2),frame);lint.position.set(p.x,4.25,p.z);scene.add(lint);
+  // comblement au-dessus de la porte : le linteau (0.16 m) laisse un vide jusqu'au plafond (ROOM.h=5.4 m)
+  const infillMat=new THREE.MeshStandardMaterial({color:0xe2d8c6,roughness:1});
+  const infill=new THREE.Mesh(new THREE.BoxGeometry(0.12,ROOM.h-4.33,z1-z0),infillMat);infill.position.set(p.x,4.33+(ROOM.h-4.33)/2,p.z);scene.add(infill);
   // collider VERROUILLÉ : bloque l'ouverture tant que le badge n'est pas validé
   accessLock={minX:p.x-0.3,maxX:p.x+0.3,minZ:z0,maxZ:z1,type:'accesslock'};COLLIDERS.push(accessLock);
 
@@ -1886,6 +1890,8 @@ function buildSideAnnexes(){
   });
   [dz0,dz1].forEach(z=>{const fr=new THREE.Mesh(new THREE.BoxGeometry(0.12,4.2,0.12),frame);fr.position.set(dx,2.1,z);scene.add(fr);});
   const lint=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.16,dz1-dz0+0.2),frame);lint.position.set(dx,4.25,dcz);scene.add(lint);
+  // comblement au-dessus de la porte : le linteau (0.16 m) laisse un vide jusqu'au plafond (H=5.4 m)
+  const infill=new THREE.Mesh(new THREE.BoxGeometry(0.12,H-4.33,dz1-dz0),wallMat);infill.position.set(dx,4.33+(H-4.33)/2,dcz);scene.add(infill);
 }
 function buildPanelWalls(){
   const glass=premiumGlass(0xaec4c9,.5);
@@ -1940,7 +1946,9 @@ function buildCorridorDecor(){
   const binTop=new THREE.Mesh(new THREE.CylinderGeometry(0.29,0.27,0.06,16),new THREE.MeshStandardMaterial({color:0x6b7178}));
   binTop.position.set(19,0.72,23.2);scene.add(binTop);
   // panneau liège (modèle Cork Board.glb), mur ouest du couloir, avant l'entrée de la cuisine (porte à x=-14.61)
-  const corkG=new THREE.Group();corkG.position.set(-21.92,1.6,22.5);corkG.rotation.y=0;scene.add(corkG); // le modèle fait déjà face à +X nativement
+  // repositionné du mur du fond de l'alcôve extérieure (derrière la porte vitrée) vers le mur sud du couloir,
+  // avant cette porte — l'ancien emplacement rendait le panneau minuscule et lointain, vu à travers la porte
+  const corkG=new THREE.Group();corkG.position.set(-17,1.6,23.9);corkG.rotation.y=Math.PI/2;scene.add(corkG); // mur sud (axe z constant) : le modèle fait face à +X nativement, +90° pour qu'il fasse face à -Z (couloir)
   if(MODEL_CORKBOARD){ corkG.add(MODEL_CORKBOARD.clone(true)); }
   else{ const cork=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.05),new THREE.MeshStandardMaterial({map:corkboardTex(),roughness:.8}));corkG.add(cork); }
 }
@@ -2356,8 +2364,9 @@ function buildServiceRoom(){
   ];
   ANNEX_WALLS.forEach(([x,z,len,axis,gaps])=>annexWall(x,z,len,axis,gaps));
   [[-16.41,45.01,3.01],[-8.23,45.02,3.01],[15.23,44.95,2.8]].forEach(([x,z,len])=>annexDoubleDoorX(x,z,len));
-  // sortie de secours (mur est de l'aile, vers le jardin)
-  annexDoor(20,48,3,'z');
+  // sortie de secours (mur est de l'aile, vers le jardin) — même modèle détaillé que celle de l'open space
+  // (barre anti-panique, imposte verte, bloc SORTIE), plutôt que la porte générique utilisée avant
+  buildSecoursDoor({x:20},48,3);
   // portes FERMÉES (bois)
   [[3.3,26.15,2.4,'z'],[-6.48,26.35,2.4,'z'],[-6.5,30.32,2.4,'z'],[1.07,37.46,2.4,'x'],[15.15,31.35,2.4,'z'],[4.54,36.02,2.4,'z']
   ].forEach(([x,z,len,axis])=>annexDoor(x,z,len,axis));
@@ -2394,7 +2403,8 @@ function buildServiceRoom(){
   [[14.52,37.89,180,3,1.5],[17.58,37.9,180,3,1.5],[13.82,40.23,270,3,1.5],[18.31,40.17,90,3,1.5],[14.59,42.57,180,3,1.5],[17.61,42.55,180,3,1.5]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
   // tables de la terrasse jardin — agrandies de 20% puis 40% (3×1.5 -> 3.6×1.8 -> 5.04×2.52, table basse 2.5×1.6 -> 3×1.92 -> 4.2×2.69)
-  [[-11.45,52.8,180,5.04,2.52],[-8.34,52.82,180,5.04,2.52],[6.56,48.9,90,4.2,2.69,0.5]
+  // hauteur des 2 grandes tables remontée à 0.85 (comme en cuisine, même souci d'aspect écrasé) ; table basse pergola inchangée (0.5, volontairement basse)
+  [[-11.45,52.8,180,5.04,2.52,0.85],[-8.34,52.82,180,5.04,2.52,0.85],[6.56,48.9,90,4.2,2.69,0.5]
   ].forEach(([x,z,ry,w,d,h])=>tableFn(x,z,ry,w,d,h));
   // tables du coin repas de la cuisine (x2 zones) — agrandies de 20% (3.6×1.8 -> 4.32×2.16), taille conservée.
   // zone 1 repositionnée à nouveau (éditeur, x=-14.34, z=31.94/35.19) : même point milieu conservé (33.565) mais
@@ -2407,9 +2417,11 @@ function buildServiceRoom(){
   [[13.85,36.64,0],[15.29,36.65,0],[16.77,36.7,0],[18.18,36.68,0],[19.55,38.04,90],[19.59,39.18,90],[19.56,40.38,90],[19.57,41.62,90],[19.61,42.72,90],
    [18.45,43.75,180],[17.3,43.8,180],[15.65,43.9,180],[14.05,43.91,180]
   ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,0.6,0.6));
-  // chaises de la terrasse jardin — agrandies de 20% puis 40% (0.6×0.6 -> 0.72×0.72 -> 1.01×1.01)
-  [[-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-13.54,52.82,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-6.3,52.8,90]
-  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,1.01,1.01));
+  // chaises de la terrasse jardin — agrandies de 20% puis 40% (0.6×0.6 -> 0.72×0.72 -> 1.01×1.01), hauteur ×1.4 (comme en
+  // cuisine). Chaise de bout ouest (près de x=-13.97, bord table 1) et est (près de x=-5.82, bord table 2) reculées pour
+  // ne plus être imbriquées dans les tables ; la chaise est remise dans le bon sens (180°).
+  [[-7.55,54.18,180],[-8.96,54.2,180],[-10.58,54.2,180],[-12.01,54.2,180],[-14.7,52.79,90],[-12.12,51.42,0],[-10.75,51.47,0],[-9.09,51.49,0],[-7.57,51.51,0],[-5.0,52.83,180]
+  ].forEach(([x,z,ry])=>chaiseFn(x,z,ry,1.01,1.01,1.4));
   // chaises du coin repas de la cuisine (x2 zones) — largeur/profondeur inchangées (0.864×0.864), hauteur ×1.4
   // (le modèle n'était pas du tout mis à l'échelle en Y, ce qui les faisait paraître écrasées) ; zone 1 repositionnée
   // à nouveau (éditeur) avec le même décalage que ses 2 tables (cf. commentaire tables) pour rester autour d'elles
@@ -2500,9 +2512,9 @@ function buildOpenSpaceDecor(){
   signPlane("TGV Care Beziers",9.5,4.6,ZW,Math.PI,4.4,"#cd0037"); // plaque plate au mur (face -z), au-dessus du canapé
   // tableau "objectifs du jour" (sous l'horloge, texte peint) ; descendu de 3.6 à 3.35
   const wbMat=new THREE.MeshStandardMaterial({map:whiteboardTex(),roughness:.4});
-  const wb=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),wbMat);wb.position.set(4.5,3.35,ZW);wb.rotation.y=Math.PI;scene.add(wb);
+  const wb=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),wbMat);wb.position.set(4.5,2.0,ZW);wb.rotation.y=Math.PI;scene.add(wb); // descendu à hauteur lisible (repère utilisateur)
   // whiteboard libre (modèle Whiteboard.glb), à la place du 2e tableau "objectifs du jour" ; descendu de 3.6 à 3.35
-  const wb2G=new THREE.Group();wb2G.position.set(11,3.35,ZW);wb2G.rotation.y=Math.PI/2;scene.add(wb2G); // le modèle fait face à ±X nativement, pas ±Z
+  const wb2G=new THREE.Group();wb2G.position.set(11,2.0,ZW);wb2G.rotation.y=Math.PI/2;scene.add(wb2G); // descendu à hauteur lisible (repère utilisateur) ; le modèle fait face à ±X nativement, pas ±Z
   if(MODEL_WHITEBOARD){ wb2G.add(MODEL_WHITEBOARD.clone(true)); }
   else{ const blankWbMat=new THREE.MeshStandardMaterial({map:blankWhiteboardTex(),roughness:.4});
     const wb2=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.5,0.06),blankWbMat);wb2G.add(wb2); }

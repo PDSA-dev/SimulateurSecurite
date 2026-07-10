@@ -1948,7 +1948,7 @@ function buildCorridorDecor(){
   // panneau liège (modèle Cork Board.glb), mur sud du couloir, côté est de la porte de la cuisine (x=-14.61) —
   // rencontré en premier en venant du badge, avant de passer la porte (repositionné plusieurs fois : d'abord
   // dans l'alcôve extérieure derrière la porte vitrée, puis juste après la porte cuisine, maintenant avant)
-  const corkG=new THREE.Group();corkG.position.set(-13,1.6,23.9);corkG.rotation.y=Math.PI/2;scene.add(corkG); // mur sud (axe z constant) : le modèle fait face à +X nativement, +90° pour qu'il fasse face à -Z (couloir)
+  const corkG=new THREE.Group();corkG.position.set(-9,1.6,23.9);corkG.rotation.y=Math.PI/2;scene.add(corkG); // décalé vers l'est (-13 -> -9) : marge insuffisante avec la porte cuisine. Le modèle fait face à +X nativement, +90° pour qu'il fasse face à -Z (couloir)
   if(MODEL_CORKBOARD){ corkG.add(MODEL_CORKBOARD.clone(true)); }
   else{ const cork=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.05),new THREE.MeshStandardMaterial({map:corkboardTex(),roughness:.8}));corkG.add(cork); }
 }

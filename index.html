@@ -479,7 +479,8 @@ let renderer,scene,camera,clock;
 // (ou si GLTFLoader.js lui-même n'a pas pu se charger, ex. ouverture du fichier en file:// direct sans serveur local :
 // on ne doit JAMAIS laisser une erreur ici interrompre le reste du script, sinon tous les boutons de l'UI restent inertes)
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
-let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null,MODEL_COFFEE=null,MODEL_COFFEE2=null,MODEL_MUGS=null,MODEL_CORKBOARD=null,MODEL_WHITEBOARD=null;
+let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null,MODEL_COFFEE=null,MODEL_COFFEE2=null,MODEL_MUGS=null,MODEL_CORKBOARD=null,MODEL_WHITEBOARD=null,MODEL_DOOR=null;
+const DOOR_NATIVE_W=1.7398; // largeur native du modèle Door.glb (chargé à hauteur=4.4, ≈échelle 1 sur Y)
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink,keepOnly){
   sink=sink||0;
@@ -543,6 +544,12 @@ function loadModels(){
     loadGltfModel('models/Mugs.glb',0.165).then(obj=>{MODEL_MUGS=obj;}), // 0.11 × 1.5 (agrandi de 150%)
     loadGltfModel('models/Cork Board.glb',1.8).then(obj=>{MODEL_CORKBOARD=obj;}), // 0.9 × 2 (agrandi de 100%)
     loadGltfModel('models/Whiteboard.glb',1.5).then(obj=>{MODEL_WHITEBOARD=obj;}),
+    loadGltfModel('models/Door.glb',4.4).then(obj=>{
+      MODEL_DOOR=obj; // = ROOM.h-1.0 (H-1.0), hauteur des portes existantes (annexDoor/buildOfficeDoors) ; à 4.2 il restait un vide en haut
+      // le panneau ("White") sortait gris foncé malgré son nom -> éclairci ; recoloré une seule fois sur le
+      // gabarit avant tout clone, donc s'applique à toutes les instances (matériau partagé par clone(true))
+      if(obj) obj.traverse(n=>{ if(n.isMesh && n.material && n.material.name==='White') n.material.color.setHex(0xe8e4d8); });
+    }),
     loadGltfModel('models/Refrigirator.glb',3.36).then(obj=>{MODEL_FRIDGE=obj;}), // 2.8 × 1.2 (agrandi de 20%)
     loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
     loadGltfModel('models/Vending Machine.glb',1.0).then(obj=>{MODEL_VENDING=obj;}), // gabarit unitaire, remis à l'échelle par instance
@@ -1800,9 +1807,15 @@ function buildOfficeDoors(){
   const door=(x,z,len,axis,leaf)=>{
     const g=new THREE.Group();g.position.set(x,0,z);if(axis==='x')g.rotation.y=Math.PI/2;scene.add(g);
     const dh=ROOM.h-1.0,lw=len-0.12;
-    if(leaf!==false){g.add(mk(new THREE.BoxGeometry(0.06,dh,lw),woodDoor,0,dh/2,0));      // vantail BOIS CLAIR
-      g.add(mk(new THREE.BoxGeometry(0.07,dh,0.05),dark,0,dh/2,-lw/2)); g.add(mk(new THREE.BoxGeometry(0.07,dh,0.05),dark,0,dh/2,lw/2)); // bords alu
-      const h=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.5,8),M.metal);h.position.set(0.07,1.15,lw/2-0.18);g.add(h);} // poignée verticale
+    if(leaf!==false){
+      if(MODEL_DOOR){ // le modèle fait face à ±X nativement (largeur en X) : +90° pour aligner sa largeur sur l'axe Z local de ce repère
+        const m=MODEL_DOOR.clone(true);m.scale.set(len/DOOR_NATIVE_W,1,1);m.rotation.y=Math.PI/2;g.add(m);
+      } else {
+        g.add(mk(new THREE.BoxGeometry(0.06,dh,lw),woodDoor,0,dh/2,0));      // vantail BOIS CLAIR
+        g.add(mk(new THREE.BoxGeometry(0.07,dh,0.05),dark,0,dh/2,-lw/2)); g.add(mk(new THREE.BoxGeometry(0.07,dh,0.05),dark,0,dh/2,lw/2)); // bords alu
+        const h=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.5,8),M.metal);h.position.set(0.07,1.15,lw/2-0.18);g.add(h); // poignée verticale
+      }
+    }
     // encadrement noir : montants pleine hauteur + barre horizontale haute
     [-len/2,len/2].forEach(p=>g.add(mk(new THREE.BoxGeometry(0.18,dh+0.14,0.12),dark,0,dh/2,p)));
     g.add(mk(new THREE.BoxGeometry(0.18,0.14,len+0.2),dark,0,dh,0));
@@ -2077,8 +2090,15 @@ function buildServiceRoom(){
       }
     });
   };
-  const annexDoor=(x,z,len,axis)=>{ // vantail FERMÉ, dans l'embrasure
-    const g=new THREE.Group();g.position.set(x,0,z);if(axis==='x')g.rotation.y=Math.PI/2;scene.add(g);
+  const annexDoor=(x,z,len,axis)=>{ // vantail FERMÉ, dans l'embrasure (porte ouverte : voir annexDoorOpen, qui rappelle cette fonction)
+    const g=new THREE.Group();g.position.set(x,0,z);scene.add(g);
+    if(MODEL_DOOR){
+      // le modèle fait face à ±X nativement (largeur le long de X) : pas de rotation pour axis='x' (mur le long de X),
+      // +90° pour axis='z' (mur le long de Z) — convention inverse du repli primitif ci-dessous (largeur native en Z)
+      const m=MODEL_DOOR.clone(true);m.scale.set(len/DOOR_NATIVE_W,1,1);m.rotation.y=(axis==='z')?Math.PI/2:0;g.add(m);
+      return;
+    }
+    if(axis==='x')g.rotation.y=Math.PI/2;
     const dh=H-1.0,lw=len-0.12;
     const leaf=new THREE.Mesh(new THREE.BoxGeometry(0.06,dh,lw),woodDoor);leaf.position.set(0,dh/2,0);g.add(leaf);
     [-len/2,len/2].forEach(p=>{const m=new THREE.Mesh(new THREE.BoxGeometry(0.16,dh+0.14,0.12),darkFrame);m.position.set(0,dh/2,p);g.add(m);});

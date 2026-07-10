@@ -541,7 +541,7 @@ function loadModels(){
     loadGltfModel('models/Coffee Machine.glb',0.525).then(obj=>{MODEL_COFFEE=obj;}), // 0.35 × 1.5 (agrandi de 150%)
     loadGltfModel('models/Coffee Machine-2.glb',0.57).then(obj=>{MODEL_COFFEE2=obj;}), // 0.38 × 1.5 (agrandi de 150%)
     loadGltfModel('models/Mugs.glb',0.165).then(obj=>{MODEL_MUGS=obj;}), // 0.11 × 1.5 (agrandi de 150%)
-    loadGltfModel('models/Cork Board.glb',0.9).then(obj=>{MODEL_CORKBOARD=obj;}),
+    loadGltfModel('models/Cork Board.glb',1.8).then(obj=>{MODEL_CORKBOARD=obj;}), // 0.9 × 2 (agrandi de 100%)
     loadGltfModel('models/Whiteboard.glb',1.5).then(obj=>{MODEL_WHITEBOARD=obj;}),
     loadGltfModel('models/Refrigirator.glb',3.36).then(obj=>{MODEL_FRIDGE=obj;}), // 2.8 × 1.2 (agrandi de 20%)
     loadGltfModel('models/Microwave.glb',1.0).then(obj=>{MODEL_MICROWAVE=obj;}), // gabarit unitaire, remis à l'échelle par instance (voir microondeFn)
@@ -1945,10 +1945,10 @@ function buildCorridorDecor(){
   bin.position.set(19,0.36,23.2);bin.castShadow=true;scene.add(bin);
   const binTop=new THREE.Mesh(new THREE.CylinderGeometry(0.29,0.27,0.06,16),new THREE.MeshStandardMaterial({color:0x6b7178}));
   binTop.position.set(19,0.72,23.2);scene.add(binTop);
-  // panneau liège (modèle Cork Board.glb), mur ouest du couloir, avant l'entrée de la cuisine (porte à x=-14.61)
-  // repositionné du mur du fond de l'alcôve extérieure (derrière la porte vitrée) vers le mur sud du couloir,
-  // avant cette porte — l'ancien emplacement rendait le panneau minuscule et lointain, vu à travers la porte
-  const corkG=new THREE.Group();corkG.position.set(-17,1.6,23.9);corkG.rotation.y=Math.PI/2;scene.add(corkG); // mur sud (axe z constant) : le modèle fait face à +X nativement, +90° pour qu'il fasse face à -Z (couloir)
+  // panneau liège (modèle Cork Board.glb), mur sud du couloir, côté est de la porte de la cuisine (x=-14.61) —
+  // rencontré en premier en venant du badge, avant de passer la porte (repositionné plusieurs fois : d'abord
+  // dans l'alcôve extérieure derrière la porte vitrée, puis juste après la porte cuisine, maintenant avant)
+  const corkG=new THREE.Group();corkG.position.set(-13,1.6,23.9);corkG.rotation.y=Math.PI/2;scene.add(corkG); // mur sud (axe z constant) : le modèle fait face à +X nativement, +90° pour qu'il fasse face à -Z (couloir)
   if(MODEL_CORKBOARD){ corkG.add(MODEL_CORKBOARD.clone(true)); }
   else{ const cork=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.9,0.05),new THREE.MeshStandardMaterial({map:corkboardTex(),roughness:.8}));corkG.add(cork); }
 }

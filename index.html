@@ -166,6 +166,7 @@
     <div class="head"><h1>🎧 TGVCare — Simulateur 3D Sécurité</h1><p>Open space · Centre de relation client SNCF</p></div>
     <div class="body center">
       <p>Tu arrives devant la porte d'accès, dehors. Avance jusqu'au lecteur à droite de la porte et <b>badge ton pass Carmillon (touche E)</b> pour entrer.</p>
+      <p style="font-size:13px;opacity:.8">🎮 Manette : stick gauche = se déplacer / choisir une réponse · stick droit = regarder · A = interagir / valider · B = pause</p>
       <button class="btn" id="startBtn">▶ Avancer vers la porte d'entrée</button>
     </div>
   </div>
@@ -3533,6 +3534,97 @@ addEventListener('mousemove',e=>{
 addEventListener('mousedown',()=>{ lookPaused=false; });
 // (updateHud() initial déplacé dans le handler #themeContinue : avant la sélection des thématiques,
 // ACTIVE_SCENARIOS n'existe pas encore.)
+
+/* ================================================================================================ */
+/*  Manette (Gamepad API) — Xbox / PlayStation / génériques (mapping "standard")                     */
+/*  En jeu : stick gauche / croix = déplacement · stick droit = regard · A = interagir (E)            */
+/*           B ou Start = pause (Échap) · A reprend après une pause                                  */
+/*  Dans les fenêtres (thématiques, intro, scénarios, fin) : stick gauche / croix = choisir,          */
+/*           A = valider la réponse / le bouton sélectionné                                          */
+/* ================================================================================================ */
+(function(){
+  const st=document.createElement('style');
+  st.textContent=`.padFocus{outline:3px solid #ffd43b!important;outline-offset:3px;box-shadow:0 0 18px rgba(255,212,59,.55)!important}
+  #padToast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;background:rgba(20,20,30,.92);color:#fff;
+  padding:9px 16px;border-radius:10px;font:600 14px system-ui,sans-serif;pointer-events:none;transition:opacity .4s;opacity:0}`;
+  document.head.appendChild(st);
+  const toast=document.createElement('div');toast.id='padToast';document.body.appendChild(toast);
+  let toastT=null;
+  function showToast(t){toast.textContent=t;toast.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>toast.style.opacity=0,2500);}
+  addEventListener('gamepadconnected',e=>showToast('🎮 Manette connectée — A : valider · stick gauche : choisir / se déplacer'));
+  addEventListener('gamepaddisconnected',()=>showToast('🎮 Manette déconnectée'));
+
+  const DZ=0.35, LOOK_DZ=0.15;
+  const padMove={f:false,b:false,l:false,r:false};
+  const prev={};
+  let lookActive=false, focusEl=null, navDir=0, navNext=0;
+
+  // fenêtre (écran) actuellement affichée au premier plan, sinon null
+  function topScreen(){
+    const s=[...document.querySelectorAll('.screen')].filter(el=>getComputedStyle(el).display!=='none');
+    return s.length?s[s.length-1]:null;
+  }
+  // éléments sélectionnables visibles et actifs dans la fenêtre
+  function focusables(scr){
+    return [...scr.querySelectorAll('button,label.themeItem,.cyberAct')].filter(el=>{
+      if(el.disabled||el.offsetParent===null)return false;
+      const cs=getComputedStyle(el);
+      return cs.visibility!=='hidden'&&cs.pointerEvents!=='none';
+    });
+  }
+  function setFocus(el){
+    if(focusEl&&focusEl!==el)focusEl.classList.remove('padFocus');
+    focusEl=el;
+    if(el){el.classList.add('padFocus');el.scrollIntoView({block:'nearest',behavior:'smooth'});}
+  }
+  function setMove(k,v){ if(padMove[k]!==v){padMove[k]=v;move[k]=v;} }
+
+  function loop(now){
+    requestAnimationFrame(loop);
+    const g=[...(navigator.getGamepads?navigator.getGamepads():[])].find(Boolean);
+    if(!g)return;
+    const ax=g.axes, btn=i=>!!(g.buttons[i]&&g.buttons[i].pressed);
+    const edge=i=>{const p=btn(i),e=p&&!prev[i];prev[i]=p;return e;};
+    const lx=ax[0]||0, ly=ax[1]||0, rx=ax[2]||0, ry=ax[3]||0;
+    const up=ly<-DZ||btn(12), down=ly>DZ||btn(13), left=lx<-DZ||btn(14), right=lx>DZ||btn(15);
+    const aPressed=edge(0), bPressed=edge(1), startPressed=edge(9);
+    const scr=topScreen();
+
+    if(scr){
+      // ---- navigation dans une fenêtre ----
+      ['f','b','l','r'].forEach(k=>setMove(k,false));
+      if(lookActive){mouseNX=0;mouseNY=0;lookActive=false;}
+      const list=focusables(scr);
+      if(!list.length){setFocus(null);return;}
+      if(!focusEl||!list.includes(focusEl)){
+        // priorité : réponses (choix) puis bouton « Continuer »
+        setFocus(list.find(el=>el.matches('.choice,.cyberAct,.extHot,.callKey'))||list.find(el=>el.id==='contBtn')||list[0]);
+      }
+      const dir=(down||right)?1:(up||left)?-1:0;
+      if(dir===0){navDir=0;}
+      else if(dir!==navDir||now>=navNext){
+        navNext=now+(dir!==navDir?350:160);navDir=dir;
+        const i=list.indexOf(focusEl);
+        setFocus(list[(i+dir+list.length)%list.length]);
+      }
+      if(aPressed&&focusEl)focusEl.click();
+      return;
+    }
+
+    // ---- en jeu ----
+    if(focusEl)setFocus(null);
+    setMove('f',up);setMove('b',down);setMove('l',left);setMove('r',right);
+    if(Math.abs(rx)>LOOK_DZ||Math.abs(ry)>LOOK_DZ){
+      mouseNX=Math.max(-1,Math.min(1,rx));mouseNY=Math.max(-1,Math.min(1,ry));lookActive=true;
+    }else if(lookActive){mouseNX=0;mouseNY=0;lookActive=false;}
+    if(aPressed){
+      if(lookPaused){lookPaused=false;}
+      else key({code:'KeyE'},true);
+    }
+    if(bPressed||startPressed)key({code:'Escape'},true);
+  }
+  requestAnimationFrame(loop);
+})();
 </script>
 </body>
 </html>

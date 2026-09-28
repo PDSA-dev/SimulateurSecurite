@@ -3551,8 +3551,8 @@ addEventListener('mousedown',()=>{ lookPaused=false; });
   const toast=document.createElement('div');toast.id='padToast';document.body.appendChild(toast);
   let toastT=null;
   function showToast(t){toast.textContent=t;toast.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>toast.style.opacity=0,2500);}
-  addEventListener('gamepadconnected',e=>showToast('🎮 Manette connectée — A : valider · stick gauche : choisir / se déplacer'));
-  addEventListener('gamepaddisconnected',()=>showToast('🎮 Manette déconnectée'));
+  addEventListener('gamepadconnected',e=>{const p=e.gamepad;if(p.mapping!=='standard'&&!(p.axes.length>=2&&p.buttons.length>=4))return;showToast('🎮 Manette connectée — A : valider · stick gauche : choisir / se déplacer');});
+  addEventListener('gamepaddisconnected',e=>{const p=e.gamepad;if(p.mapping!=='standard'&&!(p.axes.length>=2&&p.buttons.length>=4))return;showToast('🎮 Manette déconnectée');});
 
   const DZ=0.35, LOOK_DZ=0.15;
   const padMove={f:false,b:false,l:false,r:false};
@@ -3581,7 +3581,9 @@ addEventListener('mousedown',()=>{ lookPaused=false; });
 
   function loop(now){
     requestAnimationFrame(loop);
-    const g=[...(navigator.getGamepads?navigator.getGamepads():[])].find(Boolean);
+    // Ignore les casques/micros HID (ex. Jabra) exposés comme « manettes » : on privilégie le mapping standard.
+    const pads=[...(navigator.getGamepads?navigator.getGamepads():[])].filter(Boolean);
+    const g=pads.find(p=>p.mapping==='standard')||pads.find(p=>p.axes.length>=2&&p.buttons.length>=4);
     if(!g)return;
     const ax=g.axes, btn=i=>!!(g.buttons[i]&&g.buttons[i].pressed);
     const edge=i=>{const p=btn(i),e=p&&!prev[i];prev[i]=p;return e;};

@@ -148,11 +148,19 @@
     color:#fff;padding:10px 20px;border-radius:30px;font-size:14px;font-weight:700;display:none;text-align:center;
     box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:90%}
   #badgeMsg.ok{background:rgba(31,170,89,.96)}#badgeMsg.warn{background:rgba(240,140,0,.96)}
+
+  /* alarme incendie : vignette rouge pulsante (+ flou périphérique léger en qualité Haute pendant l'évacuation) */
+  #alarm{position:fixed;inset:0;z-index:4;pointer-events:none;display:none;
+    background:radial-gradient(ellipse at center,rgba(255,0,0,0) 42%,rgba(220,20,30,.6) 100%);animation:alarmPulse .9s ease-in-out infinite alternate}
+  @keyframes alarmPulse{from{opacity:.2}to{opacity:1}}
+  #alarm.blur::after{content:"";position:absolute;inset:0;backdrop-filter:blur(2.5px);-webkit-backdrop-filter:blur(2.5px);
+    -webkit-mask-image:radial-gradient(ellipse at center,transparent 52%,#000 100%);mask-image:radial-gradient(ellipse at center,transparent 52%,#000 100%)}
 </style>
 </head>
 <body>
 <div id="loading" style="display:none"><div class="spin"></div><div>Chargement de l'open space…</div></div>
 
+<div id="alarm"></div>
 <div id="hud">
   <div id="cross"></div>
   <div class="topbar">
@@ -209,6 +217,8 @@
           <button class="btn" data-nav data-act="resume">▶ Reprendre</button>
           <button data-nav data-act="restart">↻ Recommencer le parcours</button>
           <button data-nav data-act="themes">☰ Changer de thématiques</button>
+          <button data-nav data-act="quality" id="optQuality">✨ Qualité visuelle : Standard</button>
+          <button data-nav data-act="ambience" id="optAmb">🔊 Ambiance sonore : Oui</button>
           <button data-nav data-act="settings">⚙ Réglages manette</button>
           <button data-nav data-act="quit">⏻ Quitter</button>
         </div>
@@ -555,6 +565,12 @@ const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():n
 let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null,MODEL_COFFEE=null,MODEL_COFFEE2=null,MODEL_MUGS=null,MODEL_CORKBOARD=null,MODEL_WHITEBOARD=null,MODEL_DOOR=null;
 const DOOR_NATIVE_W=1.7398; // largeur native du modèle Door.glb (chargé à hauteur=4.4, ≈échelle 1 sur Y)
 const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.webp')); // panonceau réglementaire au-dessus des extincteurs
+const CONTACT_RX=/(Sofa|Table|Standing Desk|Refrigirator|Vending|Cooler|Machine|Microwave|Toilet|\/Car\.glb|\/car\d|Palm|Tree|Bushes)/;
+const CONTACT_GEO=new THREE.PlaneGeometry(1,1);
+const CONTACT_MAT=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
+  const gr=g.createRadialGradient(32,32,6,32,32,32);gr.addColorStop(0,'rgba(0,0,0,.5)');gr.addColorStop(.55,'rgba(0,0,0,.3)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=gr;g.fillRect(0,0,64,64);
+  return new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});})();
 function loadGltfModel(path,targetH,sink,keepOnly){
   sink=sink||0;
   if(!gltfLoader){ console.warn('GLTFLoader indisponible (script non chargé) : repli primitives.'); return Promise.resolve(null); }
@@ -591,9 +607,17 @@ function loadGltfModel(path,targetH,sink,keepOnly){
       obj.position.set(-center.x,-box.min.y-sink,-center.z);
       const wrapper=new THREE.Group();wrapper.add(obj);
       wrapper.traverse(n=>{if(n.isMesh){n.castShadow=true;n.receiveShadow=true;}});
+      if(CONTACT_RX.test(path)){ // ombre de contact douce (fausse occlusion ambiante) sous les meubles / appareils / véhicules / plantes
+        const c=new THREE.Mesh(CONTACT_GEO,CONTACT_MAT);c.rotation.x=-Math.PI/2;c.position.y=0.014;c.renderOrder=1;
+        c.scale.set(Math.max(0.2,size.x*scale*1.3),Math.max(0.2,size.z*scale*1.3),1);wrapper.add(c);
+      }
       resolve(wrapper);
     },undefined,err=>{console.warn('modèle 3D non chargé, repli primitives:',path,err);resolve(null);});
   });
+}
+function lightUpScreens(obj){ // dalle des écrans émissive (bleu froid) : matériau partagé par tous les clones
+  obj.traverse(n=>{if(!n.isMesh)return;(Array.isArray(n.material)?n.material:[n.material]).forEach(m=>{
+    if(m&&/screen/i.test(m.name||'')){m.color.set(0x0a1222);m.emissive=new THREE.Color(0x5b8fe0);m.emissiveIntensity=0.7;m.roughness=0.25;m.needsUpdate=true;}});});
 }
 function loadModels(){
   return Promise.all([
@@ -604,7 +628,7 @@ function loadModels(){
         obj.traverse(n=>{ if(n.isMesh && n.material && n.material.name==='carpet') n.material.color.setHex(0x161616); });
       }
     }),
-    loadGltfModel('models/Monitor.glb',0.88).then(obj=>{MODEL_MONITOR=obj;}),
+    loadGltfModel('models/Monitor.glb',0.88).then(obj=>{if(obj)lightUpScreens(obj);MODEL_MONITOR=obj;}),
     loadGltfModel('models/Computer Mouse.glb',0.045).then(obj=>{MODEL_MOUSE=obj;}),
     loadGltfModel('models/Keyboard.glb',0.03).then(obj=>{MODEL_KEYBOARD=obj;}),
     loadGltfModel('models/Bathroom Sink Square.glb',0.85).then(obj=>{MODEL_SINK=obj;}),
@@ -726,13 +750,15 @@ const _CanvasTexture=THREE.CanvasTexture;
 THREE.CanvasTexture=class extends _CanvasTexture{constructor(...a){super(...a);this.encoding=THREE.sRGBEncoding;}};
 // verre "premium" partagé (cloisons vitrées, portes, fenêtres) : MeshPhysicalMaterial avec
 // transmission/réfraction au lieu d'un simple MeshStandardMaterial semi-transparent
+let ENV_TEX=null; // environnement procédural (ciel + fenêtres) : uniquement appliqué aux vitres, pour ne pas modifier l'éclairage du reste
 function premiumGlass(color,opacity,extra){
   return new THREE.MeshPhysicalMaterial(Object.assign({
-    color,transparent:true,opacity,roughness:0.1,metalness:0.05,
+    color,transparent:true,opacity,roughness:0.1,metalness:0.05,envMap:ENV_TEX,envMapIntensity:1.4,
     transmission:0.9,ior:1.5,thickness:0.2,side:THREE.DoubleSide
   },extra||{}));
 }
 let activeHotspot=null,started=false,collapsedRef=null;
+let hemiLight=null;const HEMI_C=new THREE.Color(0xeef2f8),ALARM_C=new THREE.Color(0xff5a4a);
 let lookPaused=false; // Échap coupe le regard souris ; un clic dans la fenêtre le réactive
 let clockLedTex=null,lastClockDraw=-999; // horloge numérique (bandeau LED)
 // contrôle d'accès (badge en 3D) : porte battante manuelle, lecteur à droite
@@ -790,7 +816,13 @@ function flameTex(){
   grd.addColorStop(0,'#fff6cf');grd.addColorStop(.35,'#ffb013');grd.addColorStop(.7,'#e8590c');grd.addColorStop(1,'rgba(229,89,12,0)');
   g.fillStyle=grd;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);
 }
-const FLAME_TEX=flameTex(),ARROW_TEX=arrowTex();
+function smokeTex(){
+  const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');
+  const grd=g.createRadialGradient(32,32,2,32,32,31);
+  grd.addColorStop(0,'rgba(48,48,54,.95)');grd.addColorStop(.5,'rgba(52,52,58,.55)');grd.addColorStop(1,'rgba(55,55,60,0)');
+  g.fillStyle=grd;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);
+}
+const FLAME_TEX=flameTex(),ARROW_TEX=arrowTex(),SMOKE_TEX=smokeTex();
 
 /* ---------- textures décor (rendu réaliste couloir/open space) ---------- */
 function tileTex(){ // carrelage clair avec joints marqués (comme le hall)
@@ -1105,6 +1137,19 @@ const M_HSMIC =new THREE.MeshStandardMaterial({color:0x303640,roughness:.5});
 const M_CAP   =new THREE.MeshStandardMaterial({color:0x22324d,roughness:.75}); // casquette bleu marine
 
 /* ===================== Monde ===================== */
+function makeEnvMap(){
+  try{
+    const es=new THREE.Scene();
+    es.add(new THREE.Mesh(new THREE.SphereGeometry(60,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,
+      vertexShader:'varying vec3 vP;void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+      fragmentShader:'varying vec3 vP;void main(){float h=normalize(vP).y;vec3 top=vec3(.55,.72,.95),hor=vec3(.92,.95,.98),gr=vec3(.34,.33,.30);vec3 c=h>0.?mix(hor,top,pow(h,.6)):mix(hor,gr,pow(-h,.5));gl_FragColor=vec4(c,1.);}'})));
+    const lm=new THREE.MeshBasicMaterial({color:new THREE.Color(5,5,5.2),side:THREE.DoubleSide});
+    [[34,10,0],[-34,10,8],[6,10,34],[-6,10,-34]].forEach(([x,y,z])=>{const p=new THREE.Mesh(new THREE.PlaneGeometry(22,9),lm);p.position.set(x,y,z);p.lookAt(0,y,0);es.add(p);});
+    const ceil=new THREE.Mesh(new THREE.PlaneGeometry(30,6),lm);ceil.position.set(0,26,0);ceil.rotation.x=Math.PI/2;es.add(ceil);
+    const pm=new THREE.PMREMGenerator(renderer);ENV_TEX=pm.fromScene(es,0.02).texture;pm.dispose();
+    M_GLASS.envMap=ENV_TEX;M_GLASS.envMapIntensity=1.2;M_GLASS.needsUpdate=true;
+  }catch(e){console.warn('environnement de reflets indisponible',e);}
+}
 function buildWorld(){
   scene=new THREE.Scene();
   scene.background=new THREE.Color(0xdfe7f0); // lumière du jour, bâtiment éclairé
@@ -1133,8 +1178,9 @@ function buildWorld(){
   // sans cette compensation la scène serait surexposée par rapport au rendu validé
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.95; // rendu filmique
   document.body.appendChild(renderer.domElement);
+  makeEnvMap();
 
-  scene.add(new THREE.HemisphereLight(0xeef2f8,0x6b6656,0.5)); // éclairage intérieur plus contrasté
+  hemiLight=new THREE.HemisphereLight(0xeef2f8,0x6b6656,0.5);scene.add(hemiLight); // éclairage intérieur plus contrasté (pulsé en rouge pendant l'alarme)
   scene.add(new THREE.AmbientLight(0xffffff,0.06));
   const dl=new THREE.DirectionalLight(0xfff4e0,0.38);
   dl.position.set(8,24,6);
@@ -1161,7 +1207,7 @@ function buildWorld(){
   const ceil=new THREE.Mesh(new THREE.PlaneGeometry(W,D),new THREE.MeshStandardMaterial({map:repeatTex(ceilingTex(),W/2,D/2),color:0xf4f6f9,roughness:.9}));
   ceil.rotation.x=Math.PI/2;ceil.position.y=H;scene.add(ceil);
   // luminaires : panneaux dans l'open space + hublots ronds le long du couloir
-  const lampMat=new THREE.MeshBasicMaterial({color:0xfffaf0});
+  const lampMat=new THREE.MeshBasicMaterial({color:0xfffaf0});LAMP_MAT=lampMat;
   for(let x=-15;x<=15;x+=10)for(let z=-18;z<=15;z+=9){
     if(x===5&&z===-18) continue; // au-dessus des bureaux ACM nord : pas de luminaire (visible/blanc à travers la cloison)
     const lp=new THREE.Mesh(new THREE.PlaneGeometry(3,1.4),lampMat);lp.rotation.x=Math.PI/2;lp.position.set(x,H-0.05,z);scene.add(lp);
@@ -1301,6 +1347,7 @@ function person(face=1, opts={}){
   // un seul cylindre unité (PG.limbCyl) réutilisé pour bras + avant-bras : on l'oriente via un quaternion
   // (axe Y -> direction épaule->coude / coude->poignet) et on l'étire avec scale.y=longueur, ce qui évite
   // de créer une géométrie par personnage/segment (perf) tout en gérant des bras de longueur variable.
+  const seated=[]; // pièces « assis » (bras sur le clavier) masquées quand l'agent se lève pour marcher
   const UPV=new THREE.Vector3(0,1,0);
   const limb=(mat,a,b,rXZ)=>{
     const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,len=Math.hypot(dx,dy,dz);
@@ -1312,10 +1359,10 @@ function person(face=1, opts={}){
   };
   [-1,1].forEach(s=>{
     const sho={x:s*0.30*build,y:1.58,z:0.08}, elb={x:s*0.37*build,y:1.28,z:0.32}, wri={x:s*0.16*build,y:1.565,z:0.60};
-    limb(top, sho, elb, 1.0);                          // bras (manche)
-    limb(top, elb, wri, 0.85);                         // avant-bras (manche longue)
-    add(PG.elbow, top, elb.x,elb.y,elb.z);              // coude : masque la jointure entre les 2 cylindres
-    const hd=add(PG.hand, skin, wri.x, wri.y-0.01, wri.z+0.06); hd.scale.set(0.85,0.5,1.5); // main posée à plat
+    seated.push(limb(top, sho, elb, 1.0));             // bras (manche)
+    seated.push(limb(top, elb, wri, 0.85));            // avant-bras (manche longue)
+    seated.push(add(PG.elbow, top, elb.x,elb.y,elb.z)); // coude : masque la jointure entre les 2 cylindres
+    const hd=add(PG.hand, skin, wri.x, wri.y-0.01, wri.z+0.06); hd.scale.set(0.85,0.5,1.5); seated.push(hd); // main posée à plat
   });
 
   // ================= TÊTE =================
@@ -1380,7 +1427,61 @@ function person(face=1, opts={}){
   // micro-animation idle (respiration + clignement) mise à jour dans updatePeopleAnim() -> animate()
   ANIM_PEOPLE.push({bust,eyes:eyeMeshes,breathPhase:R()*Math.PI*2,breathSpeed:0.85+R()*0.35,
     blinking:false,blinkT:0,blinkTimer:1+R()*4});
+  g.userData.look={core,top,skin,build,seated,baseLean:core.rotation.x};
   return g;
+}
+/* ---------- cycle de marche (PNJ d'évacuation, secours) ----------
+   Les agents sont assis (buste + bras sur le clavier). À la première mise en marche on leur construit, à la demande,
+   des jambes et des bras le long du corps ; le corps se « lève » (RIG_LIFT) et les membres balancent. */
+const PANTS=[0x2b2f3a,0x394150,0x1f2a44,0x4a4a4f,0x33302b].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.85}));
+const M_SHOE=new THREE.MeshStandardMaterial({color:0x17181c,roughness:.6});
+const G_SHOE=new THREE.BoxGeometry(0.115,0.07,0.27),G_PELVIS=new THREE.CylinderGeometry(0.2,0.19,0.22,16);
+const WALKERS=[],RIG_LIFT=0.2,HIP_Y=0.74,THIGH=0.44,SHIN=0.44;
+function ensureRig(g){
+  const L=g.userData&&g.userData.look; if(!L)return null;
+  if(g.userData.rig)return g.userData.rig;
+  const {core,top,skin,build}=L, pants=PANTS[(Math.random()*PANTS.length)|0];
+  const mk=(geo,mat,parent,x,y,z,sx,sy,sz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);if(sx!==undefined)m.scale.set(sx,sy,sz);m.castShadow=true;parent.add(m);return m;};
+  const legsG=new THREE.Group(),armsG=new THREE.Group();legsG.visible=armsG.visible=false;core.add(legsG,armsG);
+  mk(G_PELVIS,pants,legsG,0,0.72,0,1.0,1,0.85);
+  const hips=[],knees=[],shs=[],els=[];
+  [-1,1].forEach(sd=>{
+    const hip=new THREE.Group();hip.position.set(sd*0.1,HIP_Y,0);legsG.add(hip);
+    mk(PG.limbCyl,pants,hip,0,-THIGH/2,0,1.6,THIGH,1.6);
+    const kn=new THREE.Group();kn.position.set(0,-THIGH,0);hip.add(kn);
+    mk(PG.elbow,pants,kn,0,0,0,1.5,1.5,1.5);
+    mk(PG.limbCyl,pants,kn,0,-SHIN/2,0,1.25,SHIN,1.25);
+    mk(G_SHOE,M_SHOE,kn,0,-SHIN-0.03,0.05);
+    hips.push(hip);knees.push(kn);
+    const sh=new THREE.Group();sh.position.set(sd*0.31*build,1.57,0.02);sh.rotation.z=sd*0.07;armsG.add(sh);
+    mk(PG.limbCyl,top,sh,0,-0.15,0,1.1,0.30,1.1);
+    const el=new THREE.Group();el.position.set(0,-0.30,0);sh.add(el);
+    mk(PG.elbow,top,el,0,0,0);
+    mk(PG.limbCyl,top,el,0,-0.14,0,0.95,0.28,0.95);
+    mk(PG.hand,skin,el,0,-0.30,0,0.8,1,0.8);
+    shs.push(sh);els.push(el);
+  });
+  const r={legsG,armsG,hips,knees,shs,els,core,stand:0,want:false,moving:false,phase:Math.random()*6,amp:0,seatedVis:true,seated:L.seated,baseLean:L.baseLean};
+  g.userData.rig=r;WALKERS.push(g);return r;
+}
+function standNow(g){const r=ensureRig(g);if(r){r.want=true;r.stand=1;}}
+function updateWalkers(dt){
+  for(const g of WALKERS){
+    const r=g.userData.rig,tg=r.want?1:0;
+    r.stand+=(tg-r.stand)*Math.min(1,dt*7);if(Math.abs(r.stand-tg)<0.01)r.stand=tg;
+    const st=r.stand,standing=st>0.5,full=st>=0.99;
+    r.legsG.visible=full;r.armsG.visible=standing;
+    if(r.seatedVis===standing){r.seatedVis=!standing;r.seated.forEach(m=>m.visible=r.seatedVis);}
+    r.amp+=((r.moving&&full?1:0)-r.amp)*Math.min(1,dt*9);
+    if(r.amp>0.01)r.phase+=dt*10.5;
+    const a=r.amp,p=r.phase,sn=Math.sin(p),cs=Math.cos(p);
+    r.core.position.y=RIG_LIFT*st+(1-Math.abs(sn))*0.045*a;
+    r.core.rotation.x=r.baseLean*(1-st)+0.1*st*(0.4+0.6*a);
+    r.hips[0].rotation.x=-sn*0.62*a;r.hips[1].rotation.x=sn*0.62*a;
+    r.knees[0].rotation.x=Math.max(0,cs)*0.95*a;r.knees[1].rotation.x=Math.max(0,-cs)*0.95*a;
+    r.shs[0].rotation.x=sn*0.55*a;r.shs[1].rotation.x=-sn*0.55*a;
+    r.els[0].rotation.x=r.els[1].rotation.x=-(0.25+0.3*a);
+  }
 }
 // ----- micro-animation idle des agents (respiration du buste + clignement des yeux) -----
 const ANIM_PEOPLE=[];
@@ -1449,6 +1550,7 @@ function updateNPCs(dt){
   const SPD=4.2;
   NPCS.forEach(n=>{
     if(n.state==='idle')return;
+    const rig=ensureRig(n.mesh);if(rig){rig.want=true;rig.moving=false;}
     let tx,tz;
     if(n.state==='following'){tx=camera.position.x+n.off.x;tz=camera.position.z+n.off.z;}
     else{tx=n.home.x;tz=n.home.z;} // returning
@@ -1457,8 +1559,9 @@ function updateNPCs(dt){
       const step=Math.min(d,SPD*dt);
       n.mesh.position.x+=dx/d*step;n.mesh.position.z+=dz/d*step;
       n.mesh.rotation.y=Math.atan2(dx,dz);
+      if(rig)rig.moving=true;
     } else if(n.state==='returning'){
-      n.mesh.position.set(n.home.x,0,n.home.z);n.mesh.rotation.y=n.home.ry;n.state='idle';
+      n.mesh.position.set(n.home.x,0,n.home.z);n.mesh.rotation.y=n.home.ry;n.state='idle';if(rig){rig.want=false;rig.moving=false;}
     }
   });
 }
@@ -1469,11 +1572,11 @@ function spawnRescue(kind,victimX,victimZ){
   const entry={x:1.3,z:19.5}; // point d'entrée/sortie côté porte open space
   const actors=[];
   if(kind==='sst'){
-    const a=person(1,{headset:false});a.position.set(entry.x,0,entry.z);scene.add(a);
+    const a=person(1,{headset:false});a.position.set(entry.x,0,entry.z);scene.add(a);standNow(a);
     actors.push({mesh:a,off:{x:0,z:0}});
   } else {
-    const a1=person(1,{headset:false});a1.position.set(entry.x-0.4,0,entry.z);scene.add(a1);
-    const a2=person(1,{headset:false});a2.position.set(entry.x+0.4,0,entry.z);scene.add(a2);
+    const a1=person(1,{headset:false});a1.position.set(entry.x-0.4,0,entry.z);scene.add(a1);standNow(a1);
+    const a2=person(1,{headset:false});a2.position.set(entry.x+0.4,0,entry.z);scene.add(a2);standNow(a2);
     const stretcher=new THREE.Group();
     const frame=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.08,1.9),new THREE.MeshStandardMaterial({color:0xd6d6d6,roughness:.6}));frame.position.y=0.5;stretcher.add(frame);
     const pad=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.04,1.8),new THREE.MeshStandardMaterial({color:0xc1121f,roughness:.7}));pad.position.y=0.55;stretcher.add(pad);
@@ -1490,6 +1593,7 @@ function updateRescue(dt){
     R.actors.forEach(a=>{
       const gx=R.target.x+a.off.x,gz=R.target.z+a.off.z;
       const dx=gx-a.mesh.position.x,dz=gz-a.mesh.position.z,d=Math.hypot(dx,dz);
+      const rgm=a.mesh.userData&&a.mesh.userData.rig;if(rgm)rgm.moving=d>0.12;
       if(d>0.12){allArrived=false;const step=Math.min(d,SPD*dt);a.mesh.position.x+=dx/d*step;a.mesh.position.z+=dz/d*step;if(!a.isProp)a.mesh.rotation.y=Math.atan2(dx,dz);}
     });
     if(allArrived){
@@ -2876,6 +2980,11 @@ function addHotspot(sc){
       s.position.set((Math.random()-.5)*1.2,0.6+Math.random()*0.6,(Math.random()-.5)*1.2);
       s.userData={phase:Math.random()*6,base:b};fl.add(s);
     }
+    for(let i=0;i<12;i++){ // fumée : sprites gris qui montent, grossissent et s'estompent (boucle)
+      const sm=new THREE.Sprite(new THREE.SpriteMaterial({map:SMOKE_TEX,transparent:true,depthWrite:false,opacity:0}));
+      sm.userData={smoke:true,age:Math.random(),speed:0.16+Math.random()*0.14,dx:(Math.random()-.5)*0.5,dz:(Math.random()-.5)*0.5,size:1.2+Math.random()*0.9};
+      fl.add(sm);
+    }
     fl.position.set(sc.pos[0],0,sc.pos[1]);scene.add(fl);
     const fire=new THREE.PointLight(0xff7b00,1.2,12);fire.position.set(sc.pos[0],1.5,sc.pos[1]);scene.add(fire);
     h.fireGroup=fl;h.fireLight=fire;flames.push(h);
@@ -2948,7 +3057,7 @@ function adaptResolution(rawDt){ // moyenne sur ~1 s ; baisse la résolution si 
   let next=prCur;
   if(fps<40&&prCur>PR_MIN)next=Math.max(PR_MIN,prCur-0.25);
   else if(fps>57&&prCur<PR_MAX)next=Math.min(PR_MAX,prCur+0.25);
-  if(next!==prCur){prCur=next;renderer.setPixelRatio(prCur);renderer.setSize(innerWidth,innerHeight);}
+  if(next!==prCur){prCur=next;renderer.setPixelRatio(prCur);renderer.setSize(innerWidth,innerHeight);if(composer){composer.setPixelRatio(prCur);composer.setSize(innerWidth,innerHeight);}}
 }
 function needShadowRefresh(){ // vrai si un objet qui projette une ombre est en mouvement
   if(RESCUES.length)return true;
@@ -2962,7 +3071,7 @@ function animate(){
   const rawDt=clock.getDelta(),dt=Math.min(rawDt,0.05),t=clock.elapsedTime;
   frameN++;
   if(started&&!gamePaused&&!document.hidden)adaptResolution(rawDt);
-  if(gamePaused){ renderer.render(scene,camera); return; } // menu pause : monde figé (PNJ, missions, regard, déplacement)
+  if(gamePaused){ renderFrame(); return; } // menu pause : monde figé (PNJ, missions, regard, déplacement)
   if(clockLedTex&&t-lastClockDraw>1){ // horloge : heure réelle, rafraîchie chaque seconde
     lastClockDraw=t;
     const jours=['DIM','LUN','MAR','MER','JEU','VEN','SAM'],now=new Date();
@@ -3021,10 +3130,15 @@ function animate(){
   }
   flames.forEach(h=>{
     if(h.resolved)return;
-    h.fireGroup.children.forEach(s=>{const k=0.7+Math.abs(Math.sin(t*6+s.userData.phase))*0.6;
+    h.fireGroup.children.forEach(s=>{
+      const u=s.userData;
+      if(u.smoke){u.age=(u.age+dt*u.speed)%1;const a=u.age,sz=u.size*(0.6+a*2.2);
+        s.position.set(u.dx*a*3,0.9+a*(ROOM.h-1.2),u.dz*a*3);s.scale.set(sz,sz,1);s.material.opacity=Math.sin(Math.PI*a)*0.55;return;}
+      const k=0.7+Math.abs(Math.sin(t*6+s.userData.phase))*0.6;
       s.scale.set(s.userData.base*k,s.userData.base*1.5*k,1);s.material.opacity=0.6+Math.sin(t*9+s.userData.phase)*0.35;});
     if(h.fireLight)h.fireLight.intensity=1.0+Math.sin(t*12)*0.5;
   });
+  updateWalkers(dt); // cycle de marche (PNJ d'évacuation, secours)
   updatePeopleAnim(dt); // respiration + clignement des yeux (tous les agents)
   updateNPCs(dt); // PNJ suiveurs (évacuation)
   updateRescue(dt); // mise en scène fin de mission (SST / ambulanciers)
@@ -3083,8 +3197,16 @@ function animate(){
     else { pr.style.display="flex"; pr.innerHTML=promptHtml; }
   }
   if(started&&t-lastMapDraw>0.066){lastMapDraw=t;drawMap();} // minimap ~15 Hz (suffisant, et ~250 rectangles redessinés à chaque image avant)
+  if(hemiLight){ // alarme : lumière ambiante qui pulse en rouge au rythme de la sirène
+    if(alarmFx){const pu=0.5+0.5*Math.sin(t*7);hemiLight.color.copy(HEMI_C).lerp(ALARM_C,0.6*pu);hemiLight.intensity=0.5+0.22*pu;alarmWas=true;}
+    else if(alarmWas){hemiLight.color.copy(HEMI_C);hemiLight.intensity=0.5;alarmWas=false;}
+  }
+  const blurWant=!!evacMission&&QUALITY==='high';
+  if(blurWant!==lastBlur){lastBlur=blurWant;const al=$("#alarm");if(al)al.classList.toggle('blur',blurWant);}
+  const fovT=evacMission?72+Math.min(1,Math.hypot(vel.x,vel.z)/6.5)*5:72; // léger effet de vitesse pendant l'évacuation
+  if(Math.abs(camera.fov-fovT)>0.02){camera.fov+=(fovT-camera.fov)*Math.min(1,dt*3);camera.updateProjectionMatrix();}
   if(needShadowRefresh()||frameN%8===0)renderer.shadowMap.needsUpdate=true; // sinon ombres figées (scène statique) ; ~7 Hz de rattrapage (chargement asynchrone des modèles, respiration des agents)
-  renderer.render(scene,camera);
+  renderFrame();
 }
 
 /* ===================== UI scénario ===================== */
@@ -3541,7 +3663,7 @@ function key(e,d){
   }
 }
 addEventListener('keydown',e=>key(e,true));addEventListener('keyup',e=>key(e,false));
-addEventListener('resize',()=>{if(!camera)return;camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+addEventListener('resize',()=>{if(!camera)return;camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);if(composer)composer.setSize(innerWidth,innerHeight);});
 
 /* ===================== Choix des thématiques (avant construction du monde) ===================== */
 const THEME_KEY='tgvcare_themes_v1';
@@ -3575,7 +3697,7 @@ $("#themeContinue").onclick=()=>{
   $("#loading").style.display='flex';
   // léger différé pour laisser le loader s'afficher, puis chargement des modèles 3D (GLB) avant la
   // construction (synchrone et coûteuse) du monde 3D
-  setTimeout(()=>{ loadModels().then(()=>{ buildWorld();animate();updateHud();$("#loading").style.display='none';$("#intro").style.display='flex'; }); },30);
+  setTimeout(()=>{ loadModels().then(()=>{ buildWorld();applyQuality();animate();updateHud();$("#loading").style.display='none';$("#intro").style.display='flex'; }); },30);
 };
 // « Recommencer le parcours » (menu pause) : on recharge la page et on saute le choix des thématiques
 try{ if(sessionStorage.getItem('tgvcare_autostart')){ sessionStorage.removeItem('tgvcare_autostart'); if(enabledThemes.size) $("#themeContinue").click(); } }catch(e){}
@@ -3603,11 +3725,47 @@ function playVictory(){ // jingle "bonne réponse" inspiré SNCF : Do, Sol, Lab,
   beep(830.61,noire,'sine',0.34,t);   t+=noire;              // La bémol — noire, accentuée
   beep(622.25,blanche,'sine',0.28,t);                        // Mi bémol — blanche, tenue jusqu'à la fin de la mesure
 }
+/* ---------- ambiance sonore d'open space (synthétisée : bruit de fond, murmure, claviers, téléphone) ---------- */
+const AMB_KEY='tgvcare_ambience';
+let ambOn=(()=>{try{return localStorage.getItem(AMB_KEY)!=='0';}catch(e){return true;}})();
+let amb=null;
+function startAmbience(){
+  if(!ambOn||amb)return;const a=audio();if(!a)return;
+  const sr=a.sampleRate,len=sr*6,buf=a.createBuffer(2,len,sr),fade=Math.floor(sr*0.3);
+  for(let ch=0;ch<2;ch++){const d=buf.getChannelData(ch);let l=0;
+    for(let i=0;i<len;i++){l=(l+0.02*(Math.random()*2-1))/1.02;d[i]=l*3.2;}
+    for(let i=0;i<fade;i++){const k=i/fade;d[i]=d[i]*k+d[len-fade+i]*(1-k);} // raccord de boucle sans clic
+  }
+  const loopEnd=(len-fade)/sr,master=a.createGain();master.gain.value=0;master.connect(a.destination);
+  const mkSrc=(rate)=>{const s=a.createBufferSource();s.buffer=buf;s.loop=true;s.loopEnd=loopEnd;s.playbackRate.value=rate;return s;};
+  const hv=mkSrc(1),hf=a.createBiquadFilter(),hg=a.createGain();hf.type='lowpass';hf.frequency.value=380;hg.gain.value=0.5;hv.connect(hf);hf.connect(hg);hg.connect(master);hv.start();
+  const mu=mkSrc(1.35),mf=a.createBiquadFilter(),mg=a.createGain(),lfo=a.createOscillator(),lg=a.createGain();
+  mf.type='bandpass';mf.frequency.value=520;mf.Q.value=0.8;mg.gain.value=0.22;lfo.frequency.value=0.17;lg.gain.value=0.16;
+  lfo.connect(lg);lg.connect(mg.gain);mu.connect(mf);mf.connect(mg);mg.connect(master);mu.start();lfo.start();
+  const cl=a.createBuffer(1,Math.floor(sr*0.03),sr),cd=cl.getChannelData(0);let pv=0;
+  for(let i=0;i<cd.length;i++){const w=Math.random()*2-1;cd[i]=(w-pv)*Math.exp(-i/(sr*0.004));pv=w;}
+  const burst=()=>{const n=3+((Math.random()*7)|0);let t=a.currentTime+0.02;
+    const pan=a.createStereoPanner?a.createStereoPanner():null;if(pan){pan.pan.value=Math.random()*1.6-0.8;pan.connect(master);}
+    for(let i=0;i<n;i++){const o=a.createBufferSource(),g=a.createGain();o.buffer=cl;o.playbackRate.value=0.9+Math.random()*0.4;g.gain.value=0.25+Math.random()*0.35;
+      o.connect(g);g.connect(pan||master);o.start(t);t+=0.05+Math.random()*0.12;}};
+  const timer=setInterval(()=>{if(alarmFx||gamePaused)return;const r=Math.random();
+    if(r<0.45)burst();else if(r<0.5){beep(1180,0.16,'sine',0.02,0);beep(1180,0.16,'sine',0.02,0.26);}},1000);
+  amb={master,srcs:[hv,mu,lfo],timer};
+  master.gain.setTargetAtTime(alarmFx?0.07:0.28,a.currentTime,0.8);
+}
+function stopAmbience(){
+  if(!amb)return;const a=actx,m=amb;amb=null;clearInterval(m.timer);
+  try{m.master.gain.setTargetAtTime(0,a.currentTime,0.2);setTimeout(()=>{m.srcs.forEach(s=>{try{s.stop();}catch(e){}});try{m.master.disconnect();}catch(e){}},900);}catch(e){}
+}
+function setAmbience(on){ambOn=on;try{localStorage.setItem(AMB_KEY,on?'1':'0');}catch(e){}if(on&&started)startAmbience();else stopAmbience();refreshOptionLabels();}
+function duckAmbience(on){try{if(amb&&actx)amb.master.gain.setTargetAtTime(on?0.07:0.28,actx.currentTime,0.4);}catch(e){}}
 let alarmTimer=null;
-function startAlarm(){ if(alarmTimer)return; if(!audio())return;
+let alarmFx=false,alarmWas=false,lastBlur=false;
+function setAlarmFx(on){alarmFx=on;const el=$("#alarm");if(el)el.style.display=on?'block':'none';duckAmbience(on);}
+function startAlarm(){ if(alarmTimer)return; setAlarmFx(true); if(!audio())return;
   const tick=()=>{ beep(900,0.28,'square',0.22,0); beep(750,0.28,'square',0.22,0.34); };
   tick(); alarmTimer=setInterval(tick,0.9*1000); }
-function stopAlarm(){ if(alarmTimer){clearInterval(alarmTimer);alarmTimer=null;} }
+function stopAlarm(){ if(alarmTimer){clearInterval(alarmTimer);alarmTimer=null;} setAlarmFx(false); }
 function showErreur(theme){
   const e=$("#erreur"),ei=$("#erreurImg"),fb=$("#erreurFallback");
   fb.querySelector('.em').textContent=ERR_ICON_BY_THEME[theme]||'😡';
@@ -3639,6 +3797,7 @@ function scanBadge3D(){
 $("#startBtn").onclick=()=>{
   $("#intro").style.display="none";started=true;
   audio(); // débloque le son (geste utilisateur)
+  startAmbience();
 };
 // regard : position de la souris à l'écran (pas besoin de cliquer/verrouiller le pointeur)
 addEventListener('mousemove',e=>{
@@ -3651,6 +3810,56 @@ addEventListener('mousedown',()=>{ lookPaused=false; });
 // (updateHud() initial déplacé dans le handler #themeContinue : avant la sélection des thématiques,
 // ACTIVE_SCENARIOS n'existe pas encore.)
 
+
+/* ===================== Qualité visuelle : Standard / Haute (bloom + grain) ===================== */
+const QUAL_KEY='tgvcare_quality';
+let QUALITY=(()=>{try{return localStorage.getItem(QUAL_KEY)==='high'?'high':'standard';}catch(e){return'standard';}})();
+let composer=null,bloomPass=null,gradePass=null,postfxState='idle',LAMP_MAT=null;
+const GRADE_SHADER={
+  uniforms:{tDiffuse:{value:null},time:{value:0},grain:{value:0.045},vig:{value:0.22}},
+  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:`uniform sampler2D tDiffuse;uniform float time,grain,vig;varying vec2 vUv;
+    float rnd(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+    vec3 toSRGB(vec3 c){c=clamp(c,0.,1.);return mix(c*12.92,1.055*pow(c,vec3(1./2.4))-.055,step(.0031308,c));}
+    void main(){vec3 c=toSRGB(texture2D(tDiffuse,vUv).rgb);
+      vec2 d=vUv-.5;c*=1.-vig*dot(d,d)*2.2;
+      float n=rnd(vUv*vec2(1733.,997.)+fract(time)*57.)-.5;c+=n*grain*(1.-.6*dot(c,vec3(.333)));
+      gl_FragColor=vec4(c,1.);}`
+};
+function buildComposer(){
+  const pr=renderer.getPixelRatio();
+  const rt=new THREE.WebGLMultisampleRenderTarget(Math.floor(innerWidth*pr),Math.floor(innerHeight*pr),{type:THREE.HalfFloatType,format:THREE.RGBAFormat,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+  composer=new THREE.EffectComposer(renderer,rt);
+  composer.setPixelRatio(pr);composer.setSize(innerWidth,innerHeight);
+  composer.addPass(new THREE.RenderPass(scene,camera));
+  bloomPass=new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),0.45,0.6,0.92);composer.addPass(bloomPass);
+  gradePass=new THREE.ShaderPass(GRADE_SHADER);composer.addPass(gradePass);
+}
+function ensureComposer(){
+  if(composer||postfxState==='loading'||postfxState==='failed')return;
+  const build=()=>{try{buildComposer();postfxState='ready';}catch(e){console.warn('qualité Haute indisponible',e);composer=null;postfxState='failed';QUALITY='standard';applyQuality();}};
+  if(THREE.EffectComposer){build();return;}
+  postfxState='loading';const sc=document.createElement('script');sc.src='postfx.min.js';
+  sc.onload=()=>{postfxState='idle';if(QUALITY==='high')build();};
+  sc.onerror=()=>{postfxState='failed';QUALITY='standard';applyQuality();};
+  document.head.appendChild(sc);
+}
+function applyQuality(){
+  const high=QUALITY==='high';
+  if(LAMP_MAT)LAMP_MAT.color.setRGB(1,0.98,0.94).multiplyScalar(high?3:1); // luminaires « surexposés » : ce sont eux qui font le halo
+  if(high&&renderer)ensureComposer();
+  refreshOptionLabels();
+}
+function setQuality(q){QUALITY=q;try{localStorage.setItem(QUAL_KEY,q);}catch(e){}applyQuality();}
+function renderFrame(){
+  if(QUALITY==='high'&&composer){gradePass.uniforms.time.value=(performance.now()/1000)%1000;composer.render();}
+  else renderer.render(scene,camera);
+}
+function refreshOptionLabels(){
+  const q=document.getElementById('optQuality'),m=document.getElementById('optAmb');
+  if(q)q.textContent='✨ Qualité visuelle : '+(QUALITY==='high'?'Haute':'Standard');
+  if(m)m.textContent='🔊 Ambiance sonore : '+(ambOn?'Oui':'Non');
+}
 
 /* ===================== Menu pause + réglages manette ===================== */
 const PAD_KEY='tgvcare_pad_v1';
@@ -3715,6 +3924,8 @@ function pauseAction(act){
     case'resume':closePause();break;
     case'restart':restartRun();break;
     case'themes':try{sessionStorage.removeItem('tgvcare_autostart');}catch(e){}location.reload();break;
+    case'quality':setQuality(QUALITY==='high'?'standard':'high');break;
+    case'ambience':setAmbience(!ambOn);break;
     case'settings':showPausePanel('settings');break;
     case'back':showPausePanel('main');break;
     case'resetPad':padCfg={...PAD_DEF};savePadCfg();renderPadSettings();break;
@@ -3734,7 +3945,7 @@ $("#pause").addEventListener('click',e=>{
 });
 $("#quitRestart").onclick=restartRun;
 $("#quitResume").onclick=closePause;
-renderPadSettings();
+renderPadSettings();refreshOptionLabels();
 
 /* ================================================================================================ */
 /*  Manette (Gamepad API) — Xbox / PlayStation / génériques (mapping "standard")                     */

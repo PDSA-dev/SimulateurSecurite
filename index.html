@@ -554,7 +554,7 @@ let renderer,scene,camera,clock;
 const gltfLoader=(typeof THREE.GLTFLoader==='function')?new THREE.GLTFLoader():null;
 let MODEL_EXTINGUISHER=null,MODEL_CHAIR=null,MODEL_MONITOR=null,MODEL_MOUSE=null,MODEL_KEYBOARD=null,MODEL_SINK=null,MODEL_TOILET=null,MODEL_MIRROR=null,MODEL_SOFA=null,MODEL_CSINK=null,MODEL_FRIDGE=null,MODEL_MICROWAVE=null,MODEL_VENDING=null,MODEL_COOLER=null,MODEL_STANDDESK=null,MODEL_TABLE=null,MODEL_CHAIR2=null,MODEL_CARS=[],MODEL_LCHAIR=null,MODEL_LSOFA=null,MODEL_PALM=null,MODEL_TREE=null,MODEL_BUSH=null,MODEL_COFFEE=null,MODEL_COFFEE2=null,MODEL_MUGS=null,MODEL_CORKBOARD=null,MODEL_WHITEBOARD=null,MODEL_DOOR=null;
 const DOOR_NATIVE_W=1.7398; // largeur native du modèle Door.glb (chargé à hauteur=4.4, ≈échelle 1 sur Y)
-const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.png')); // panonceau réglementaire au-dessus des extincteurs
+const EXT_SIGN_TEX=new THREE.TextureLoader().load(encodeURI('extincteur panneau.webp')); // panonceau réglementaire au-dessus des extincteurs
 function loadGltfModel(path,targetH,sink,keepOnly){
   sink=sink||0;
   if(!gltfLoader){ console.warn('GLTFLoader indisponible (script non chargé) : repli primitives.'); return Promise.resolve(null); }
@@ -1127,6 +1127,7 @@ function buildWorld(){
   renderer=new THREE.WebGLRenderer({antialias:true,logarithmicDepthBuffer:true});
   renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap; // ombres douces (premium)
+  renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true; // perf : la shadow map (2048², toute la scène re-rendue) n'est recalculée que si quelque chose bouge (voir animate)
   renderer.outputEncoding=THREE.sRGBEncoding; // gestion moderne des couleurs (r128) : conversion linéaire -> sRGB en sortie
   // exposition ramenée de 1.18 à 0.95 : la conversion sRGB en sortie éclaircit déjà les tons moyens,
   // sans cette compensation la scène serait surexposée par rapport au rendu validé
@@ -2936,9 +2937,31 @@ function drawMap(){
 }
 
 /* ===================== Boucle ===================== */
+// ----- perf : résolution dynamique + rafraîchissement des ombres à la demande -----
+const PR_MAX=Math.min(window.devicePixelRatio||1,2),PR_MIN=0.75;
+let prCur=PR_MAX,perfAcc=0,perfN=0,frameN=0,lastMapDraw=0,lastPromptHtml='';
+function adaptResolution(rawDt){ // moyenne sur ~1 s ; baisse la résolution si < 40 i/s, la remonte si > 57 i/s
+  if(rawDt>0.25){perfAcc=0;perfN=0;return;} // gros saut (onglet masqué, chargement) : ignoré
+  perfAcc+=rawDt;perfN++;
+  if(perfAcc<1)return;
+  const fps=perfN/perfAcc;perfAcc=0;perfN=0;
+  let next=prCur;
+  if(fps<40&&prCur>PR_MIN)next=Math.max(PR_MIN,prCur-0.25);
+  else if(fps>57&&prCur<PR_MAX)next=Math.min(PR_MAX,prCur+0.25);
+  if(next!==prCur){prCur=next;renderer.setPixelRatio(prCur);renderer.setSize(innerWidth,innerHeight);}
+}
+function needShadowRefresh(){ // vrai si un objet qui projette une ombre est en mouvement
+  if(RESCUES.length)return true;
+  if(NPCS.some(n=>n.state!=='idle'))return true;
+  if(accessState==='opening')return true;
+  if(hallLeaves.length&&hallDoorOpen>0.005&&hallDoorOpen<0.995)return true;
+  return false;
+}
 function animate(){
   requestAnimationFrame(animate);
-  const dt=Math.min(clock.getDelta(),0.05),t=clock.elapsedTime;
+  const rawDt=clock.getDelta(),dt=Math.min(rawDt,0.05),t=clock.elapsedTime;
+  frameN++;
+  if(started&&!gamePaused&&!document.hidden)adaptResolution(rawDt);
   if(gamePaused){ renderer.render(scene,camera); return; } // menu pause : monde figé (PNJ, missions, regard, déplacement)
   if(clockLedTex&&t-lastClockDraw>1){ // horloge : heure réelle, rafraîchie chaque seconde
     lastClockDraw=t;
@@ -3048,11 +3071,19 @@ function animate(){
   }
 
   const pr=$("#prompt");
-  if(started&&!isModalOpen()&&nearReader){ pr.style.display="flex"; pr.innerHTML='<span class="key">E</span> Badger le pass Carmillon'; }
-  else if(started&&!isModalOpen()&&nearMission){ pr.style.display="flex"; pr.innerHTML='<span class="key">E</span> '+missionPrompt; }
-  else if(started&&!isModalOpen()&&activeHotspot){ pr.style.display="flex"; pr.innerHTML='<span class="key">E</span> Inspecter cette zone à risque'; }
-  else pr.style.display="none";
-  if(started)drawMap();
+  let promptHtml=null;
+  if(started&&!isModalOpen()){
+    if(nearReader) promptHtml='<span class="key">E</span> Badger le pass Carmillon';
+    else if(nearMission) promptHtml='<span class="key">E</span> '+missionPrompt;
+    else if(activeHotspot) promptHtml='<span class="key">E</span> Inspecter cette zone à risque';
+  }
+  if(promptHtml!==lastPromptHtml||(promptHtml!==null&&pr.style.display==='none')){ // évite de reconstruire le DOM à chaque image (se réaffiche si un autre code l'a masqué)
+    lastPromptHtml=promptHtml;
+    if(promptHtml===null) pr.style.display="none";
+    else { pr.style.display="flex"; pr.innerHTML=promptHtml; }
+  }
+  if(started&&t-lastMapDraw>0.066){lastMapDraw=t;drawMap();} // minimap ~15 Hz (suffisant, et ~250 rectangles redessinés à chaque image avant)
+  if(needShadowRefresh()||frameN%8===0)renderer.shadowMap.needsUpdate=true; // sinon ombres figées (scène statique) ; ~7 Hz de rattrapage (chargement asynchrone des modèles, respiration des agents)
   renderer.render(scene,camera);
 }
 
@@ -3216,12 +3247,12 @@ function advanceDaeMission(){
   }
 }
 // Étape 3/4 de la mission feu électrique : choix de l'extincteur adapté (avant de repartir éteindre le feu).
-// Affiche l'affiche "TYPES D'EXTINCTEURS ET LEURS UTILISATIONS" (fichier attendu : extincteurs.png, à la
-// racine du projet, à côté de erreur.png) ; le joueur clique directement sur l'extincteur dans l'image.
+// Affiche l'affiche "TYPES D'EXTINCTEURS ET LEURS UTILISATIONS" (fichier attendu : extincteurs.webp, à la
+// racine du projet, à côté de erreur.webp) ; le joueur clique directement sur l'extincteur dans l'image.
 // left/width en % : position des 4 zones cliquables au-dessus des colonnes EAU/MOUSSE/CO2/POUDRE de l'image.
 // Si l'alignement ne colle pas exactement une fois le vrai fichier en place, ce sont ces 4 nombres à ajuster.
 const EXT_CHOICE_Q={
-  img:"extincteurs.png",
+  img:"extincteurs.webp",
   choices:[
     {id:'eau',   label:"Eau",    left:25.5, width:18.6, ok:false,
       fb:"Jamais d'eau sur un feu électrique : l'eau conduit le courant, risque d'électrocution en remontant le jet jusqu'à toi."},
@@ -3550,11 +3581,11 @@ $("#themeContinue").onclick=()=>{
 try{ if(sessionStorage.getItem('tgvcare_autostart')){ sessionStorage.removeItem('tgvcare_autostart'); if(enabledThemes.size) $("#themeContinue").click(); } }catch(e){}
 
 // Overlay ERREUR à chaque mauvaise réponse : une image différente par thème de scénario, avec repli en
-// cascade — image du thème -> image générique erreur.png -> emoji (le même que celui du scénario) si les
+// cascade — image du thème -> image générique erreur.webp -> emoji (le même que celui du scénario) si les
 // deux images sont absentes. Fichiers attendus à la racine du projet, un par thème :
-// erreur_surete.png, erreur_donnees.png, erreur_incendie.png, erreur_secours.png, erreur_dae.png,
-// erreur_cyber.png, erreur_agression.png, erreur_poste.png, erreur_feu.png
-const ERR_IMG_BY_THEME=Object.fromEntries(Object.keys(THEMES).map(t=>[t,`erreur_${t}.png`]));
+// erreur_surete.webp, erreur_donnees.webp, erreur_incendie.webp, erreur_secours.webp, erreur_dae.webp,
+// erreur_cyber.webp, erreur_agression.webp, erreur_poste.webp, erreur_feu.webp
+const ERR_IMG_BY_THEME=Object.fromEntries(Object.keys(THEMES).map(t=>[t,`erreur_${t}.webp`]));
 const ERR_ICON_BY_THEME=Object.fromEntries(SCENARIOS.map(s=>[s.theme,s.ill]));
 /* ===================== Sons (Web Audio, sans fichier) ===================== */
 let actx=null;
@@ -3582,7 +3613,7 @@ function showErreur(theme){
   fb.querySelector('.em').textContent=ERR_ICON_BY_THEME[theme]||'😡';
   ei.style.display="";fb.style.display="none";
   const useFallback=()=>{ei.style.display="none";fb.style.display="block";};
-  const useGeneric=()=>tryLoad('erreur.png',useFallback);
+  const useGeneric=()=>tryLoad('erreur.webp',useFallback);
   const tryLoad=(src,onFail)=>{ei.onerror=onFail;ei.src=src;if(ei.complete&&ei.naturalWidth===0)onFail();};
   const themeImg=ERR_IMG_BY_THEME[theme];
   if(themeImg)tryLoad(themeImg,useGeneric);else useGeneric();

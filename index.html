@@ -753,7 +753,7 @@ THREE.CanvasTexture=class extends _CanvasTexture{constructor(...a){super(...a);t
 let ENV_TEX=null; // environnement procédural (ciel + fenêtres) : uniquement appliqué aux vitres, pour ne pas modifier l'éclairage du reste
 function premiumGlass(color,opacity,extra){
   return new THREE.MeshPhysicalMaterial(Object.assign({
-    color,transparent:true,opacity,roughness:0.1,metalness:0.05,envMap:ENV_TEX,envMapIntensity:1.4,
+    color,transparent:true,opacity,roughness:0.1,metalness:0.05,envMap:ENV_TEX,envMapIntensity:0.5,
     transmission:0.9,ior:1.5,thickness:0.2,side:THREE.DoubleSide
   },extra||{}));
 }
@@ -1019,7 +1019,7 @@ const M={
 };
 const SHIRTS=[0x3a6ea5,0x9c4dcc,0x2f8f4f,0xd98324,0x444b5e,0xc0392b].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.85}));
 // ---- palette & géométries PNJ (agents de centre d'appels) ----
-const HAIR=[0x2a2320,0x4a3522,0x6b4a2b,0x8d8f94,0x141414,0x7a5a3a].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.95}));
+const HAIR=[0x2a2320,0x4a3522,0x6b4a2b,0x8d8f94,0x141414,0x7a5a3a,0xd8c38a,0xb5651d,0xe6e3dc,0x9c4a2f,0x3b2a1e,0xc2a265].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.95}));
 const M_HEADSET=new THREE.MeshStandardMaterial({color:0x16181d,roughness:.5,metalness:.35});
 const M_CUP=new THREE.MeshStandardMaterial({color:0x202329,roughness:.55,metalness:.25});
 const M_COLLAR=new THREE.MeshStandardMaterial({color:0xf3f5f8,roughness:.7});
@@ -1126,6 +1126,16 @@ const TOPS_LIGHT=[0xffffff,0xeef3f9,0xdbe6f1,0xf3ece0,0xe7dccb,0xcfd8e0]
 // Vestes / cardigans (tons professionnels)
 const JACKETS=[0x2a3650,0x35414f,0x4c5360,0x6c6354,0x5a4a4a,0x33473f,0x44505c]
   .map(c=>new THREE.MeshStandardMaterial({map:fabricTex(c),roughness:.88,metalness:.04}));
+// tenues colorées (pulls, polos, chemises, blouses) et vestes plus variées pour les blazers
+const TOPS_COLOR=[0xcd0037,0x1b7f8c,0xe0a526,0x2e8b57,0xd8728f,0x3f5ba9,0xe8743b,0x7a5bb5,0x9fb4c8,0xb0413e,0x22262e,0x8c8f94,0xf2d7d5,0x445c3d,0x5a8f9e]
+  .map(c=>new THREE.MeshStandardMaterial({map:fabricTex(c),roughness:.85}));
+const JACKETS_F=[0x8c2f39,0x1f4e5f,0x5b3a6b,0x2a3650,0xc9b79c,0x3f6b5a,0xa5303f,0x44505c]
+  .map(c=>new THREE.MeshStandardMaterial({map:fabricTex(c),roughness:.88,metalness:.04}));
+const TIES=[0xcd0037,0x1d2f5c,0x2f6b4f,0x6b2f5c,0x3a3f4b,0xb8860b].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.5}));
+const LIPS=[0xb5685c,0xc2445a,0xa85a50,0xd07a85,0x9c3b4a].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.5}));
+const FRAMES=[0xcd0037,0x1f4e8c,0x8a5a2b,0xd9d9d9,0x2f6b4f].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.4,metalness:.3}));
+const M_GOLD=new THREE.MeshStandardMaterial({color:0xd4af37,roughness:.3,metalness:.8});
+const G_TIE=new THREE.BoxGeometry(0.075,0.5,0.018),G_KNOT=new THREE.BoxGeometry(0.085,0.07,0.03),G_EAR=new THREE.SphereGeometry(0.02,10,8);
 const M_LIP   =new THREE.MeshStandardMaterial({color:0xb5685c,roughness:.55});
 const M_BROW  =new THREE.MeshStandardMaterial({color:0x2a2018,roughness:.9});
 const M_EYE   =new THREE.MeshStandardMaterial({color:0x20242c,roughness:.35});
@@ -1140,14 +1150,17 @@ const M_CAP   =new THREE.MeshStandardMaterial({color:0x22324d,roughness:.75}); /
 function makeEnvMap(){
   try{
     const es=new THREE.Scene();
-    es.add(new THREE.Mesh(new THREE.SphereGeometry(60,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,
-      vertexShader:'varying vec3 vP;void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader:'varying vec3 vP;void main(){float h=normalize(vP).y;vec3 top=vec3(.55,.72,.95),hor=vec3(.92,.95,.98),gr=vec3(.34,.33,.30);vec3 c=h>0.?mix(hor,top,pow(h,.6)):mix(hor,gr,pow(-h,.5));gl_FragColor=vec4(c,1.);}'})));
-    const lm=new THREE.MeshBasicMaterial({color:new THREE.Color(5,5,5.2),side:THREE.DoubleSide});
+    // ciel dégradé en couleurs de sommets (un ShaderMaterial personnalisé ne se rendait pas dans PMREM : environnement noir -> vitres sombres)
+    const sg=new THREE.SphereGeometry(60,32,16),pos=sg.attributes.position,cols=new Float32Array(pos.count*3);
+    const top=new THREE.Color(.86,.92,1),hor=new THREE.Color(1,1,1),gr=new THREE.Color(.82,.80,.76),cc=new THREE.Color();
+    for(let k=0;k<pos.count;k++){const h=pos.getY(k)/60;cc.copy(hor).lerp(h>0?top:gr,Math.pow(Math.abs(h),h>0?.6:.5));cols[k*3]=cc.r;cols[k*3+1]=cc.g;cols[k*3+2]=cc.b;}
+    sg.setAttribute('color',new THREE.BufferAttribute(cols,3));
+    es.add(new THREE.Mesh(sg,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,depthWrite:false})));
+    const lm=new THREE.MeshBasicMaterial({color:new THREE.Color(3.2,3.2,3.3),side:THREE.DoubleSide});
     [[34,10,0],[-34,10,8],[6,10,34],[-6,10,-34]].forEach(([x,y,z])=>{const p=new THREE.Mesh(new THREE.PlaneGeometry(22,9),lm);p.position.set(x,y,z);p.lookAt(0,y,0);es.add(p);});
     const ceil=new THREE.Mesh(new THREE.PlaneGeometry(30,6),lm);ceil.position.set(0,26,0);ceil.rotation.x=Math.PI/2;es.add(ceil);
     const pm=new THREE.PMREMGenerator(renderer);ENV_TEX=pm.fromScene(es,0.02).texture;pm.dispose();
-    M_GLASS.envMap=ENV_TEX;M_GLASS.envMapIntensity=1.2;M_GLASS.needsUpdate=true;
+    M_GLASS.envMap=ENV_TEX;M_GLASS.envMapIntensity=0.6;M_GLASS.needsUpdate=true;
   }catch(e){console.warn('environnement de reflets indisponible',e);}
 }
 function buildWorld(){
@@ -1310,28 +1323,42 @@ function person(face=1, opts={}){
   const add=(geo,mat,x,y,z)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);core.add(m);return m;};
   const beard  = !!opts.beard;
   const cap    = !!opts.cap;
-  const headset= opts.headset!==false;               // casque par défaut, sauf opts.headset:false
+  const headset= opts.headset!==false&&R()<0.85;     // casque par défaut (85 %), sauf opts.headset:false
 
   // ---- choix esthétiques (variantes) ----
   const skin   = pick(SKINS);
   const hairMat= pick(HAIR);
   const female = R()<0.5;
-  const hasJacket = R()<0.6;                         // veste/cardigan
-  const top    = hasJacket ? pick(JACKETS) : pick(TOPS_LIGHT);
-  const shirtMat = pick(TOPS_LIGHT);                 // chemise visible sous la veste
-  const style  = female ? 2+((R()*4)|0)             // 2..5 : mi-long, bun, queue, afro
-                        : (R()*3)|0;                // 0..2 : courte, frange, afro court
-  // ---- morphologie individuelle : carrure (largeur buste/épaules) et tête (taille), indépendantes
-  // de la taille globale (appliquée en fin de fonction via g.scale) -> évite le clonage visuel des agents.
-  const build  = 0.88 + R()*0.26;                    // 0.88..1.14 largeur buste/épaules
-  const headSc = 0.94 + R()*0.12;                    // 0.94..1.06 taille de tête
+  // tenue : blazer + chemise · chemise seule · pull/gilet col rond (parfois col roulé) · polo/tee-shirt coloré
+  const oR=R(), outfit = oR<0.32?'blazer' : oR<0.58?'chemise' : oR<0.83?'pull' : 'polo';
+  const hasJacket = outfit==='blazer';
+  const hasCollar = outfit==='blazer'||outfit==='chemise';
+  const colorTop  = ()=>pick(TOPS_COLOR);
+  const top    = outfit==='blazer' ? pick(female?JACKETS_F:JACKETS) : outfit==='chemise' ? (R()<0.5?pick(TOPS_LIGHT):colorTop()) : colorTop();
+  const shirtMat = outfit==='blazer' ? (R()<0.55?pick(TOPS_LIGHT):colorTop()) : top;
+  // coiffure : femmes 2..6 (afro, mi-longue, chignon, queue, longue) ; hommes 0..3 (courte, frange, afro, mi-longue) ou crâne rasé
+  const style  = female ? 2+((R()*5)|0) : (R()<0.1 ? -1 : (R()*4)|0);
+  const wantBeard = beard || (!female && style>=0 && R()<0.28);
+  // ---- morphologie individuelle : carrure plus fine chez les femmes, plus large chez les hommes ----
+  const build  = female ? 0.82+R()*0.17 : 0.98+R()*0.18;
+  const headSc = female ? 0.93+R()*0.07 : 0.99+R()*0.08;
 
   // ================= CORPS =================
   // buste élégant (épaules larges, taille marquée)
   const bust=add(PG.bust, top, 0,1.16,0); bust.scale.set(build,1,build); bust.castShadow=true;
   const sh=add(PG.shoulder, top, 0,1.60,0); sh.scale.set(build,0.55,0.82*build);
   // chemise/blouse : col en V visible au creux du cou
-  add(PG.collarV, shirtMat, 0,1.585,0.04).rotation.x=0.32;
+  if(hasCollar) add(PG.collarV, shirtMat, 0,1.585,0.04).rotation.x=0.32;
+  else if(outfit==='pull'&&R()<0.35) add(new THREE.CylinderGeometry(0.115,0.135,0.15,16), top, 0,1.52,0.0); // col roulé
+  if(!female&&hasCollar&&R()<0.45){ // cravate (hommes en chemise / blazer)
+    const tm=pick(TIES),tz=(r)=>r*build+0.012;
+    const knot=add(G_KNOT,tm,0,1.545,tz(0.295)); knot.rotation.x=0.1;
+    const tie=add(G_TIE,tm,0,1.31,tz(0.265)); tie.rotation.x=0.12;
+  }
+  if(female&&outfit!=='blazer'&&R()<0.3){ // foulard / écharpe légère
+    const sm=pick(TOPS_COLOR),sc=add(new THREE.TorusGeometry(0.15,0.045,8,20),sm,0,1.575,0.01);sc.rotation.x=Math.PI/2;
+    const tail=add(new THREE.BoxGeometry(0.07,0.3,0.02),sm,0.07*build,1.42,0.27*build);tail.rotation.set(0.1,0,0.1);
+  }
   if(hasJacket){
     // revers de veste + patte de boutonnage = silhouette tailleur
     [-1,1].forEach(s=>{const l=add(PG.lapel, top, s*0.085*build,1.42,0.205);
@@ -1372,6 +1399,7 @@ function person(face=1, opts={}){
   const jaw=add(PG.jaw, skin, 0,1.70,0.025); jaw.scale.set(0.94*headSc,0.86*headSc,0.96*headSc);
   // oreilles
   [-1,1].forEach(s=>{const e=add(PG.ear, skin, s*0.215*headSc,1.79,0.0); e.scale.set(0.55,1.0,1.05);});
+  if(female&&R()<0.45){const em=R()<0.5?M_GOLD:M.metal;[-1,1].forEach(sd=>add(G_EAR,em,sd*0.218*headSc,1.725,0.01));} // boucles d'oreilles
   // yeux + sourcils
   const eyeMeshes=[];
   [-1,1].forEach(s=>{eyeMeshes.push(add(PG.eye, M_EYE, s*0.082*headSc,1.82,0.205*headSc));
@@ -1380,10 +1408,10 @@ function person(face=1, opts={}){
   add(PG.noseBridge, skin, 0,1.80,0.215*headSc).rotation.x=-0.42;
   add(PG.noseTip, skin, 0,1.755,0.238*headSc);
   // lèvres subtiles
-  const lips=add(PG.lips, M_LIP, 0,1.718,0.222*headSc); lips.scale.set(0.95*headSc,0.42*headSc,0.5*headSc);
+  const lips=add(PG.lips, female?pick(LIPS):M_LIP, 0,1.718,0.222*headSc); lips.scale.set(0.95*headSc,0.42*headSc,0.5*headSc);
 
   // ================= BARBE (optionnelle) =================
-  if(beard){
+  if(wantBeard){
     const bd=add(PG.beard, hairMat, 0,1.74,0.045); bd.scale.set(1.08,1.15,1.0);    // barbe enveloppant le menton/joues
     add(PG.moustache, hairMat, 0,1.745,0.225).rotation.x=-0.1;                      // moustache sous le nez
   }
@@ -1392,7 +1420,7 @@ function person(face=1, opts={}){
   if(cap){
     add(PG.capCrown, M_CAP, 0,1.86,-0.01).scale.set(1.02,0.92,1.04);                // calotte
     const vis=add(PG.capVisor, M_CAP, 0,1.875,0.16); vis.rotation.set(-0.32,0,0);   // visière vers l'avant (+z)
-  } else {
+  } else if(style>=0){
     hairCut(core, hairMat, style);
   }
 
@@ -1407,11 +1435,12 @@ function person(face=1, opts={}){
 
   // ================= LUNETTES (≈40 %) =================
   if(R()<0.4){
-    [-1,1].forEach(s=>{const l=add(PG.lens, M_FRAME, s*0.082,1.815,0.232); l.rotation.x=-0.06;
+    const fm=R()<0.35?pick(FRAMES):M_FRAME;
+    [-1,1].forEach(s=>{const l=add(PG.lens, fm, s*0.082,1.815,0.232); l.rotation.x=-0.06;
       const gl=add(PG.lens, M_GLASS, s*0.082,1.815,0.232); gl.scale.set(0.9,0.9,0.4); gl.rotation.x=-0.06;});
     // pont + branches vers les oreilles
-    add(new THREE.BoxGeometry(0.05,0.008,0.008), M_FRAME, 0,1.822,0.236);
-    [-1,1].forEach(s=>{const t=add(PG.temple, M_FRAME, s*0.155,1.818,0.13); t.rotation.y=s*0.5;});
+    add(new THREE.BoxGeometry(0.05,0.008,0.008), fm, 0,1.822,0.236);
+    [-1,1].forEach(s=>{const t=add(PG.temple, fm, s*0.155,1.818,0.13); t.rotation.y=s*0.5;});
   }
 
   // ================= POSTURE NATURELLE =================
@@ -1423,35 +1452,38 @@ function person(face=1, opts={}){
   // orientation finale : face à ses écrans + petite variation d'angle
   g.rotation.y = (face>0?0:Math.PI) + (R()-0.5)*0.3;
   // taille globale (autour des pieds, y=0) : indépendante de la carrure/tête -> silhouettes variées
-  g.scale.setScalar(0.93 + R()*0.14);                // 0.93..1.07
+  g.scale.setScalar(female ? 0.9+R()*0.11 : 0.98+R()*0.12);  // femmes un peu plus petites en moyenne
   // micro-animation idle (respiration + clignement) mise à jour dans updatePeopleAnim() -> animate()
   ANIM_PEOPLE.push({bust,eyes:eyeMeshes,breathPhase:R()*Math.PI*2,breathSpeed:0.85+R()*0.35,
     blinking:false,blinkT:0,blinkTimer:1+R()*4});
-  g.userData.look={core,top,skin,build,seated,baseLean:core.rotation.x};
+  g.userData.look={core,top,skin,build,seated,female,baseLean:core.rotation.x};
   return g;
 }
 /* ---------- cycle de marche (PNJ d'évacuation, secours) ----------
    Les agents sont assis (buste + bras sur le clavier). À la première mise en marche on leur construit, à la demande,
    des jambes et des bras le long du corps ; le corps se « lève » (RIG_LIFT) et les membres balancent. */
 const PANTS=[0x2b2f3a,0x394150,0x1f2a44,0x4a4a4f,0x33302b].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.85}));
-const M_SHOE=new THREE.MeshStandardMaterial({color:0x17181c,roughness:.6});
+const SHOES=[0x17181c,0x3b2a1e,0xf0f0f0,0xb02a37,0x2b3a55].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.6}));
+const G_SKIRT=new THREE.CylinderGeometry(0.2,0.3,0.46,18,1,true);
 const G_SHOE=new THREE.BoxGeometry(0.115,0.07,0.27),G_PELVIS=new THREE.CylinderGeometry(0.2,0.19,0.22,16);
 const WALKERS=[],RIG_LIFT=0.2,HIP_Y=0.74,THIGH=0.44,SHIN=0.44;
 function ensureRig(g){
   const L=g.userData&&g.userData.look; if(!L)return null;
   if(g.userData.rig)return g.userData.rig;
-  const {core,top,skin,build}=L, pants=PANTS[(Math.random()*PANTS.length)|0];
+  const {core,top,skin,build,female}=L, pants=PANTS[(Math.random()*PANTS.length)|0];
+  const skirt=female&&Math.random()<0.4, legMat=skirt?(Math.random()<0.5?skin:pants):pants, shoeMat=SHOES[(Math.random()*SHOES.length)|0];
   const mk=(geo,mat,parent,x,y,z,sx,sy,sz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);if(sx!==undefined)m.scale.set(sx,sy,sz);m.castShadow=true;parent.add(m);return m;};
   const legsG=new THREE.Group(),armsG=new THREE.Group();legsG.visible=armsG.visible=false;core.add(legsG,armsG);
   mk(G_PELVIS,pants,legsG,0,0.72,0,1.0,1,0.85);
+  if(skirt){const sm=mk(G_SKIRT,Math.random()<0.5?top:pants,legsG,0,0.52,0);sm.material=sm.material.clone();sm.material.side=THREE.DoubleSide;}
   const hips=[],knees=[],shs=[],els=[];
   [-1,1].forEach(sd=>{
     const hip=new THREE.Group();hip.position.set(sd*0.1,HIP_Y,0);legsG.add(hip);
-    mk(PG.limbCyl,pants,hip,0,-THIGH/2,0,1.6,THIGH,1.6);
+    mk(PG.limbCyl,legMat,hip,0,-THIGH/2,0,1.6,THIGH,1.6);
     const kn=new THREE.Group();kn.position.set(0,-THIGH,0);hip.add(kn);
-    mk(PG.elbow,pants,kn,0,0,0,1.5,1.5,1.5);
-    mk(PG.limbCyl,pants,kn,0,-SHIN/2,0,1.25,SHIN,1.25);
-    mk(G_SHOE,M_SHOE,kn,0,-SHIN-0.03,0.05);
+    mk(PG.elbow,legMat,kn,0,0,0,1.5,1.5,1.5);
+    mk(PG.limbCyl,legMat,kn,0,-SHIN/2,0,1.25,SHIN,1.25);
+    mk(G_SHOE,shoeMat,kn,0,-SHIN-0.03,0.05);
     hips.push(hip);knees.push(kn);
     const sh=new THREE.Group();sh.position.set(sd*0.31*build,1.57,0.02);sh.rotation.z=sd*0.07;armsG.add(sh);
     mk(PG.limbCyl,top,sh,0,-0.15,0,1.1,0.30,1.1);

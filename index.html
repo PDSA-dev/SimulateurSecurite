@@ -1456,7 +1456,21 @@ function person(face=1, opts={}){
   // micro-animation idle (respiration + clignement) mise à jour dans updatePeopleAnim() -> animate()
   ANIM_PEOPLE.push({bust,eyes:eyeMeshes,breathPhase:R()*Math.PI*2,breathSpeed:0.85+R()*0.35,
     blinking:false,blinkT:0,blinkTimer:1+R()*4});
-  g.userData.look={core,top,skin,build,seated,female,baseLean:core.rotation.x};
+  // ---- tenue du bas (partagée entre la pose assise et le cycle de marche) + jambes assises ----
+  const pants=PANTS[(R()*PANTS.length)|0], skirt=female&&R()<0.4, skirtMat=R()<0.5?top:pants,
+        legMat=skirt?(R()<0.5?skin:pants):pants, shoeMat=SHOES[(R()*SHOES.length)|0];
+  {const addG=(geo,mat,x,y,z,sx,sy,sz)=>{const m=add(geo,mat,x,y,z);if(sx!==undefined)m.scale.set(sx,sy,sz);seated.push(m);return m;};
+   addG(G_PELVIS,pants,0,0.74,0.02,1.15,0.55,1.05);                       // bassin sur l'assise
+   if(skirt) addG(G_SKIRTSEAT,skirtMat,0,0.78,0.2);
+   [-1,1].forEach(sd=>{
+     const hx=sd*0.1, th=addG(PG.limbCyl,legMat,hx,0.68,0.2,1.6,0.46,1.6);th.rotation.x=Math.PI/2-0.45;       // cuisse quasi horizontale
+     th.position.set(hx,0.74-Math.sin(0.45)*0.23,0.02+Math.cos(0.45)*0.23);
+     const kz=0.02+Math.cos(0.45)*0.46,ky=0.74-Math.sin(0.45)*0.46;
+     addG(PG.elbow,legMat,hx,ky,kz,1.5,1.5,1.5);
+     addG(PG.limbCyl,legMat,hx,ky-0.22,kz,1.25,0.46,1.25);                                                       // tibia vertical
+     addG(G_SHOE,shoeMat,hx,ky-0.47,kz+0.05);                                                                    // chaussure
+   });}
+  g.userData.look={core,top,skin,build,seated,female,legs:{pants,skirt,skirtMat,legMat,shoeMat},baseLean:core.rotation.x};
   return g;
 }
 /* ---------- cycle de marche (PNJ d'évacuation, secours) ----------
@@ -1464,18 +1478,17 @@ function person(face=1, opts={}){
    des jambes et des bras le long du corps ; le corps se « lève » (RIG_LIFT) et les membres balancent. */
 const PANTS=[0x2b2f3a,0x394150,0x1f2a44,0x4a4a4f,0x33302b].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.85}));
 const SHOES=[0x17181c,0x3b2a1e,0xf0f0f0,0xb02a37,0x2b3a55].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.6}));
-const G_SKIRT=new THREE.CylinderGeometry(0.2,0.3,0.46,18,1,true);
+const G_SKIRT=new THREE.CylinderGeometry(0.2,0.3,0.46,18,1,true),G_SKIRTSEAT=new THREE.BoxGeometry(0.42,0.07,0.5);
 const G_SHOE=new THREE.BoxGeometry(0.115,0.07,0.27),G_PELVIS=new THREE.CylinderGeometry(0.2,0.19,0.22,16);
 const WALKERS=[],RIG_LIFT=0.2,HIP_Y=0.74,THIGH=0.44,SHIN=0.44;
 function ensureRig(g){
   const L=g.userData&&g.userData.look; if(!L)return null;
   if(g.userData.rig)return g.userData.rig;
-  const {core,top,skin,build,female}=L, pants=PANTS[(Math.random()*PANTS.length)|0];
-  const skirt=female&&Math.random()<0.4, legMat=skirt?(Math.random()<0.5?skin:pants):pants, shoeMat=SHOES[(Math.random()*SHOES.length)|0];
+  const {core,top,skin,build}=L, {pants,skirt,skirtMat,legMat,shoeMat}=L.legs;
   const mk=(geo,mat,parent,x,y,z,sx,sy,sz)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);if(sx!==undefined)m.scale.set(sx,sy,sz);m.castShadow=true;parent.add(m);return m;};
   const legsG=new THREE.Group(),armsG=new THREE.Group();legsG.visible=armsG.visible=false;core.add(legsG,armsG);
   mk(G_PELVIS,pants,legsG,0,0.72,0,1.0,1,0.85);
-  if(skirt){const sm=mk(G_SKIRT,Math.random()<0.5?top:pants,legsG,0,0.52,0);sm.material=sm.material.clone();sm.material.side=THREE.DoubleSide;}
+  if(skirt){const sm=mk(G_SKIRT,skirtMat,legsG,0,0.52,0);sm.material=sm.material.clone();sm.material.side=THREE.DoubleSide;}
   const hips=[],knees=[],shs=[],els=[];
   [-1,1].forEach(sd=>{
     const hip=new THREE.Group();hip.position.set(sd*0.1,HIP_Y,0);legsG.add(hip);
@@ -3024,10 +3037,10 @@ function addHotspot(sc){
   hotspots.push(h);
 }
 function buildCollapsed(x,z){
-  const g=person();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);collapsedRef=g;
+  const g=person();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);standNow(g);collapsedRef=g;
 }
 function buildCollapsedDae(x,z){
-  const g=person();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);collapsedDaeRef=g;
+  const g=person();g.rotation.z=Math.PI/2;g.position.set(x,0.35,z+1.2);scene.add(g);standNow(g);collapsedDaeRef=g;
 }
 
 /* ===================== Collision ===================== */

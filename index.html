@@ -36,6 +36,8 @@
     animation:promptPulse 2.4s ease-in-out infinite}
   @keyframes promptPulse{0%,100%{box-shadow:0 10px 34px rgba(205,0,55,.4),inset 0 1px 0 rgba(255,255,255,.18)}50%{box-shadow:0 10px 44px rgba(205,0,55,.7),inset 0 1px 0 rgba(255,255,255,.18)}}
   #prompt .key{background:#fff;color:var(--carmillon);border-radius:7px;padding:2px 9px;font-weight:800}
+  #prompt .key.padA{background:#3fb950;color:#fff;border-radius:50%;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:inset 0 -2px 0 rgba(0,0,0,.25)}
+  #help kbd.padA{background:#3fb950;color:#fff;border-radius:50%;padding:1px 6px}
 
   #mission{position:absolute;top:66px;left:50%;transform:translateX(-50%);background:rgba(217,72,15,.96);
     color:#fff;padding:10px 20px;border-radius:30px;font-size:14px;font-weight:700;display:none;text-align:center;
@@ -176,7 +178,7 @@
   <div id="mission"></div>
   <div id="carry">🧯 Extincteur en main</div>
   <canvas id="map" width="180" height="170"></canvas>
-  <div id="help"><kbd>Z Q S D</kbd> / flèches : se déplacer &nbsp;·&nbsp; <kbd>Souris</kbd> : regarder &nbsp;·&nbsp; <kbd>E</kbd> : interagir &nbsp;·&nbsp; <kbd>Échap</kbd> : pause / menu</div>
+  <div id="help"><span class="hKb"><kbd>Z Q S D</kbd> / flèches : se déplacer &nbsp;·&nbsp; <kbd>Souris</kbd> : regarder &nbsp;·&nbsp; <kbd>E</kbd> : interagir &nbsp;·&nbsp; <kbd>Échap</kbd> : pause / menu</span><span class="hPad" style="display:none"><kbd>Stick G</kbd> : se déplacer &nbsp;·&nbsp; <kbd>Stick D</kbd> : regarder &nbsp;·&nbsp; <kbd class="padA">A</kbd> : interagir &nbsp;·&nbsp; <kbd>Menu</kbd> : pause</span></div>
 </div>
 
 <div class="screen" id="themeSelect">
@@ -195,7 +197,7 @@
   <div class="card">
     <div class="head"><h1>🎧 TGVCare — Simulateur 3D Sécurité</h1><p>Open space · Centre de relation client SNCF</p></div>
     <div class="body center">
-      <p>Tu arrives devant la porte d'accès, dehors. Avance jusqu'au lecteur à droite de la porte et <b>badge ton pass Carmillon (touche E)</b> pour entrer.</p>
+      <p>Tu arrives devant la porte d'accès, dehors. Avance jusqu'au lecteur à droite de la porte et <b>badge ton pass Carmillon (<span class="ikeyT">touche E</span>)</b> pour entrer.</p>
       <p style="font-size:13px;opacity:.8">🎮 Manette : stick gauche = se déplacer / choisir une réponse · stick droit = regarder · A = interagir / valider · Start ou B = menu pause (reprendre, recommencer, réglages)</p>
       <button class="btn" id="startBtn">▶ Avancer vers la porte d'entrée</button>
     </div>
@@ -759,6 +761,19 @@ function premiumGlass(color,opacity,extra){
 }
 let activeHotspot=null,started=false,collapsedRef=null;
 let hemiLight=null;const HEMI_C=new THREE.Color(0xeef2f8),ALARM_C=new THREE.Color(0xff5a4a);
+let usingPad=false; // dernière entrée utilisée : manette (true) ou clavier/souris (false) -> adapte les indications « E » / « A »
+function setUsingPad(v){
+  if(usingPad===v)return; usingPad=v;
+  document.querySelectorAll('.hKb').forEach(e=>e.style.display=v?'none':'');
+  document.querySelectorAll('.hPad').forEach(e=>e.style.display=v?'':'none');
+  syncKeyLabels();
+}
+function syncKeyLabels(){document.querySelectorAll('.ikeyT').forEach(e=>{const t=e.dataset.s?(usingPad?'A':'E'):(usingPad?'bouton A':'touche E');if(e.textContent!==t)e.textContent=t;});}
+const INTERACT_KEY=()=>usingPad?'<span class="key padA">A</span>':'<span class="key">E</span>';
+new MutationObserver(()=>{if(usingPad)syncKeyLabels();}).observe(document.body,{childList:true,subtree:true}); // textes de mission recréés dynamiquement
+addEventListener('keydown',()=>setUsingPad(false),true);
+addEventListener('mousedown',()=>setUsingPad(false),true);
+addEventListener('mousemove',e=>{if(e.movementX||e.movementY)setUsingPad(false);},true);
 let lookPaused=false; // Échap coupe le regard souris ; un clic dans la fenêtre le réactive
 let clockLedTex=null,lastClockDraw=-999; // horloge numérique (bandeau LED)
 // contrôle d'accès (badge en 3D) : porte battante manuelle, lecteur à droite
@@ -3232,9 +3247,9 @@ function animate(){
   const pr=$("#prompt");
   let promptHtml=null;
   if(started&&!isModalOpen()){
-    if(nearReader) promptHtml='<span class="key">E</span> Badger le pass Carmillon';
-    else if(nearMission) promptHtml='<span class="key">E</span> '+missionPrompt;
-    else if(activeHotspot) promptHtml='<span class="key">E</span> Inspecter cette zone à risque';
+    if(nearReader) promptHtml=INTERACT_KEY()+' Badger le pass Carmillon';
+    else if(nearMission) promptHtml=INTERACT_KEY()+' '+missionPrompt;
+    else if(activeHotspot) promptHtml=INTERACT_KEY()+' Inspecter cette zone à risque';
   }
   if(promptHtml!==lastPromptHtml||(promptHtml!==null&&pr.style.display==='none')){ // évite de reconstruire le DOM à chaque image (se réaffiche si un autre code l'a masqué)
     lastPromptHtml=promptHtml;
@@ -3369,13 +3384,13 @@ function showMission(){
   m.style.display='block';
   if(fireMission.stage==='cut'){
     missionTargetPos.set(ELEC_CUTOFF.x,2,ELEC_CUTOFF.z);missionPrompt="Couper l'électricité";
-    m.innerHTML='⚡ Étape 2/4 — Coupe l\'électricité au tableau (★ sur la carte), puis appuie sur E';
+    m.innerHTML='⚡ Étape 2/4 — Coupe l\'électricité au tableau (★ sur la carte), puis appuie sur <span class="ikeyT" data-s="1">E</span>';
   } else if(fireMission.stage==='getExt'){
     missionTargetPos.set(ENTRANCE_EXT.x,1.2,ENTRANCE_EXT.z);missionPrompt="Prendre l'extincteur";
-    m.innerHTML='🧯 Étape 3/4 — Va chercher l\'extincteur (mur à droite de l\'entrée), puis appuie sur E';
+    m.innerHTML='🧯 Étape 3/4 — Va chercher l\'extincteur (mur à droite de l\'entrée), puis appuie sur <span class="ikeyT" data-s="1">E</span>';
   } else {
     missionTargetPos.set(fireMission.h.group.position.x,1.2,fireMission.h.group.position.z);missionPrompt="Éteindre le feu";
-    m.innerHTML='🔥 Étape 4/4 — Reviens éteindre le feu avec l\'extincteur, puis appuie sur E';
+    m.innerHTML='🔥 Étape 4/4 — Reviens éteindre le feu avec l\'extincteur, puis appuie sur <span class="ikeyT" data-s="1">E</span>';
   }
 }
 function advanceMission(){
@@ -3398,10 +3413,10 @@ function showDaeMission(){
   m.style.display='block';
   if(daeMission.stage==='getDae'){
     missionTargetPos.set(21.6,1.4,-10);missionPrompt="Prendre le défibrillateur";
-    m.innerHTML='🫀 Étape 3/4 — Va chercher le DAE (mur est), puis appuie sur E';
+    m.innerHTML='🫀 Étape 3/4 — Va chercher le DAE (mur est), puis appuie sur <span class="ikeyT" data-s="1">E</span>';
   } else {
     missionTargetPos.set(daeMission.h.group.position.x,1.2,daeMission.h.group.position.z);missionPrompt="Utiliser le DAE sur la victime";
-    m.innerHTML='🚑 Étape 4/4 — Reviens auprès de la victime avec le DAE et appuie sur E pour l\'utiliser';
+    m.innerHTML='🚑 Étape 4/4 — Reviens auprès de la victime avec le DAE et appuie sur <span class="ikeyT" data-s="1">E</span> pour l\'utiliser';
   }
 }
 function advanceDaeMission(){
@@ -3632,11 +3647,11 @@ function showEvac(){
   if(evacMission.stage==='toExit'){
     const p=doorPos('east',-14); missionTargetPos.set(p.x,2,p.z);
     missionPrompt="Déverrouiller la sortie de secours";
-    m.innerHTML='🚨 Évacuation 1/2 — Rejoins la SORTIE DE SECOURS (croix verte, mur est) ; la porte est verrouillée, appuie sur E pour l\'ouvrir';
+    m.innerHTML='🚨 Évacuation 1/2 — Rejoins la SORTIE DE SECOURS (croix verte, mur est) ; la porte est verrouillée, appuie sur <span class="ikeyT" data-s="1">E</span> pour l\'ouvrir';
   } else {
     missionTargetPos.set(ASSEMBLY.x,2,ASSEMBLY.z);
     missionPrompt="Rejoindre le point de rassemblement";
-    m.innerHTML='🟢 Évacuation 2/2 — Suis les flèches jusqu\'au POINT DE RASSEMBLEMENT dehors, puis appuie sur E';
+    m.innerHTML='🟢 Évacuation 2/2 — Suis les flèches jusqu\'au POINT DE RASSEMBLEMENT dehors, puis appuie sur <span class="ikeyT" data-s="1">E</span>';
   }
 }
 function advanceEvac(){
@@ -4048,6 +4063,7 @@ renderPadSettings();refreshOptionLabels();
     const lx=ax[0]||0, ly=ax[1]||0, rx=ax[2]||0, ry=ax[3]||0;
     const up=ly<-NAV_DZ||btn(12), down=ly>NAV_DZ||btn(13), left=lx<-NAV_DZ||btn(14), right=lx>NAV_DZ||btn(15);
     const aPressed=edge(0), bPressed=edge(1), startPressed=edge(9);
+    if(g.buttons.some(b=>b&&b.pressed)||Math.abs(lx)>0.5||Math.abs(ly)>0.5||Math.abs(rx)>0.5||Math.abs(ry)>0.5)setUsingPad(true);
     const scr=topScreen();
     const dz=padCfg.dz;
 

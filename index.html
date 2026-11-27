@@ -1647,6 +1647,36 @@ function addNPC(npc,wx,wz,extraRotY){
     off:{x:(Math.random()-.5)*2.6,z:1.0+Math.random()*1.6}}); // décalage individuel derrière/à côté du joueur
   return npc;
 }
+// ---------- écrans allumés seulement quand un PNJ est assis devant (sinon en veille) ----------
+const WORKSTATIONS=[];const SCR_OFF_CACHE=new Map();
+function screenOffMat(m){ // version « veille » d'une dalle (même type de matériau -> pas de nouveau shader à chaque bascule)
+  let o=SCR_OFF_CACHE.get(m.uuid);
+  if(!o){o=m.clone();o.color.set(0x07090c);if(o.emissive){o.emissive.set(0x000000);o.emissiveIntensity=0;}SCR_OFF_CACHE.set(m.uuid,o);}
+  return o;
+}
+function registerWorkstationScreens(mons,sx,sz){
+  const scr=[];
+  mons.forEach(mon=>mon.traverse(n=>{
+    if(!n.isMesh)return;
+    if(Array.isArray(n.material)){
+      const i=n.material.findIndex(m=>m&&(/screen/i.test(m.name||'')||m===M.screen));
+      if(i>=0){n.material=n.material.slice(); // tableau propre à ce clone (sinon partagé par tous les écrans)
+        scr.push({mesh:n,idx:i,on:n.material[i],off:screenOffMat(n.material[i])});}
+    } else if(n.material&&(/screen/i.test(n.material.name||'')||n.material===M.screen)){
+      scr.push({mesh:n,idx:-1,on:n.material,off:screenOffMat(n.material)});
+    }
+  }));
+  if(scr.length)WORKSTATIONS.push({seat:{x:sx,z:sz},scr,lit:null});
+}
+let screensTimer=1;
+function updateScreens(dt){
+  screensTimer+=dt;if(screensTimer<0.4)return;screensTimer=0;
+  WORKSTATIONS.forEach(w=>{
+    const lit=NPCS.some(n=>Math.abs(n.mesh.position.x-w.seat.x)<0.9&&Math.abs(n.mesh.position.z-w.seat.z)<0.9);
+    if(lit===w.lit)return;w.lit=lit;
+    w.scr.forEach(e=>{const m=lit?e.on:e.off;if(e.idx>=0)e.mesh.material[e.idx]=m;else e.mesh.material=m;});
+  });
+}
 function updateNPCs(dt){
   const SPD=4.2;
   NPCS.forEach(n=>{
@@ -1731,6 +1761,7 @@ function workstation(x,z,face,withPerson){
   // poste utilisé par la mission données : on garde une référence pour y poser les indices (écran, post-it, document)
   const ds=DONNEES_SPOTS.find(s=>s.desk&&Math.abs(s.desk.x-x)<0.05&&Math.abs(s.desk.z-z)<0.05);
   if(ds){ds.ws={group:g,monitors:mons,x,z,face};withPerson=false;} // poste laissé vide : le collègue s'est absenté
+  else registerWorkstationScreens(mons,x,z+sz);
   if(withPerson){const p=person(face);addNPC(p,x,z+sz,0);}
 }
 function pod(cx,cz,cols,dx=3.95,skip=null){
@@ -3357,6 +3388,7 @@ function animate(){
   updateWalkers(dt); // cycle de marche (PNJ d'évacuation, secours)
   updatePeopleAnim(dt); // respiration + clignement des yeux (tous les agents)
   updateNPCs(dt); // PNJ suiveurs (évacuation)
+  updateScreens(dt); // écrans allumés si un PNJ est à son poste, sinon en veille
   updateRescue(dt); // mise en scène fin de mission (SST / ambulanciers)
   // mission incendie / évacuation : proximité de la cible courante
   nearMission=false;

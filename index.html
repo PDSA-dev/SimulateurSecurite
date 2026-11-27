@@ -203,6 +203,7 @@
       <div class="btns" style="margin-bottom:14px"><button id="themeAll">Tout cocher</button><button id="themeNone">Tout décocher</button></div>
       <p id="themeWarn" style="display:none;color:#ff8a8a;font-size:13px;margin-bottom:10px">⚠️ Sélectionne au moins une thématique pour continuer.</p>
       <button class="btn" id="themeContinue">▶ Continuer</button>
+      <button class="btn" id="lbOpen" style="background:rgba(255,255,255,.1);margin-left:8px">🏆 Classement</button>
     </div>
   </div>
 </div>
@@ -275,6 +276,25 @@
       <button id="quitResume">▶ Reprendre là où j'en étais</button>
     </div>
   </div></div>
+</div>
+
+<div class="screen" id="lbScreen" style="display:none">
+  <div class="card" style="max-width:520px">
+    <div class="head"><h1>🏆 Classement</h1><p>Top 10 · bonnes réponses puis temps le plus court</p></div>
+    <div class="body">
+      <div id="lbScreenList"><div class="lbMsg">Chargement du classement…</div></div>
+      <div id="lbResetBox" style="display:none;margin-top:14px">
+        <div class="lbForm"><input id="lbPin" type="password" inputmode="numeric" maxlength="12" placeholder="Code PIN" autocomplete="off">
+          <button class="btn" id="lbResetGo">Réinitialiser</button></div>
+        <div class="lbMsg">Remet le classement à zéro pour tout le monde.</div>
+      </div>
+      <div class="lbMsg" id="lbScreenMsg"></div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="lbClose">← Retour</button>
+        <button class="btn" id="lbResetShow" style="background:rgba(255,255,255,.1)">🔒 Réinitialiser les scores</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="erreur">
@@ -3727,8 +3747,8 @@ function endGame(){
 }
 function fmtTime(s){s=Math.round(s);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
 function escHtml(t){return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-function renderLeaderboard(rows,myId){
-  const el=$("#lbList"); if(!el)return;
+function renderLeaderboard(rows,myId,elId){
+  const el=$("#"+(elId||"lbList")); if(!el)return;
   if(!rows.length){el.innerHTML='<div class="lbMsg">Aucun score pour l\'instant : sois le premier !</div>';return;}
   const medal=i=>["🥇","🥈","🥉"][i]||(i+1);
   el.innerHTML=`<table class="lbTable"><tr><th>#</th><th>Nom</th><th class="n">Bonnes rép.</th><th class="n">Temps</th></tr>
@@ -3758,6 +3778,42 @@ async function setupLeaderboard({correct,total,secs,fullRun}){
   };
   btn.onclick=send; inp.addEventListener("keydown",e=>{if(e.key==="Enter")send();});
 }
+// ----- Écran « Classement » depuis la page de démarrage + réinitialisation protégée par code PIN -----
+async function waitLB(){for(let i=0;i<50&&!window.TGVLeaderboard;i++)await new Promise(r=>setTimeout(r,100));return window.TGVLeaderboard;}
+async function refreshLbScreen(){
+  const LB=await waitLB(),el=$("#lbScreenList");
+  if(!LB){el.innerHTML='<div class="lbMsg">Classement indisponible (pas de connexion ?).</div>';return;}
+  try{renderLeaderboard(await LB.top(10),null,"lbScreenList");}
+  catch(e){console.warn(e);el.innerHTML='<div class="lbMsg">Classement indisponible pour le moment.</div>';}
+}
+function openLbScreen(){
+  $("#lbResetBox").style.display="none";$("#lbResetShow").style.display="";$("#lbScreenMsg").textContent="";$("#lbPin").value="";
+  $("#lbScreenList").innerHTML='<div class="lbMsg">Chargement du classement…</div>';
+  $("#lbScreen").style.display="flex";refreshLbScreen();
+}
+$("#lbOpen").onclick=openLbScreen;
+$("#lbClose").onclick=()=>{$("#lbScreen").style.display="none";};
+$("#lbResetShow").onclick=()=>{$("#lbResetBox").style.display="block";$("#lbResetShow").style.display="none";$("#lbPin").focus();};
+async function doLbReset(){
+  const pin=$("#lbPin").value.trim(),m=$("#lbScreenMsg"),b=$("#lbResetGo");
+  if(!pin){m.textContent="Saisis le code PIN.";return;}
+  if(!confirmReset()){return;}
+  const LB=await waitLB();if(!LB){m.textContent="Classement indisponible.";return;}
+  b.disabled=true;m.textContent="Réinitialisation…";
+  try{await LB.reset(pin);m.textContent="✅ Classement réinitialisé.";$("#lbPin").value="";$("#lbResetBox").style.display="none";$("#lbResetShow").style.display="";refreshLbScreen();}
+  catch(e){console.warn(e);m.textContent=/permission/i.test(e&&e.code||e&&e.message||"")?"❌ Code PIN incorrect.":"❌ Échec, réessaie.";}
+  b.disabled=false;
+}
+// confirmation en 2 temps sans boîte de dialogue navigateur : 1er clic arme, 2e clic (dans les 4 s) valide
+let lbResetArmed=0;
+function confirmReset(){
+  if(Date.now()-lbResetArmed<4000){lbResetArmed=0;$("#lbResetGo").textContent="Réinitialiser";return true;}
+  lbResetArmed=Date.now();$("#lbResetGo").textContent="Confirmer ?";$("#lbScreenMsg").textContent="Clique à nouveau pour confirmer : tous les scores seront effacés du classement.";
+  setTimeout(()=>{if(lbResetArmed&&Date.now()-lbResetArmed>=4000){lbResetArmed=0;$("#lbResetGo").textContent="Réinitialiser";}},4100);
+  return false;
+}
+$("#lbResetGo").onclick=doLbReset;
+$("#lbPin").addEventListener("keydown",e=>{if(e.key==="Enter")doLbReset();});
 
 /* ===================== Clavier ===================== */
 function key(e,d){
@@ -4209,7 +4265,7 @@ renderPadSettings();refreshOptionLabels();
 // ===== Classement en ligne (Firebase Firestore, projet simulateur-securite-tgvcare) =====
 // La config Web Firebase est publique par nature : la protection est assurée par les règles Firestore.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp }
+import { getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs, serverTimestamp, doc, getDoc, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const app = initializeApp({
   apiKey: "AIzaSyConuMUpBCqpl4JQP0s-3QcpWBYcxO88OE",
@@ -4219,15 +4275,26 @@ const app = initializeApp({
   messagingSenderId: "568587587177",
   appId: "1:568587587177:web:6954f59d5cd28210395cf8"
 });
-const db = getFirestore(app), col = collection(db, "classement");
+const db = getFirestore(app), col = collection(db, "classement"), cfgRef = doc(db, "config", "saison");
+// « Saison » courante : chaque réinitialisation crée une nouvelle saison ; seuls ses scores sont affichés.
+async function saison(){ const d = await getDoc(cfgRef); return d.exists() ? d.data().saison : "s0"; }
 window.TGVLeaderboard = {
   async submit(nom, score, temps){
-    const ref = await addDoc(col, { nom: String(nom).slice(0, 20), score, temps, date: serverTimestamp() });
+    const ref = await addDoc(col, { nom: String(nom).slice(0, 20), score, temps, saison: await saison(), date: serverTimestamp() });
     return ref.id;
   },
   async top(n = 10){
-    const snap = await getDocs(query(col, orderBy("score", "desc"), orderBy("temps", "asc"), limit(n)));
+    const q = query(col, where("saison", "==", await saison()), orderBy("score", "desc"), orderBy("temps", "asc"), limit(n));
+    const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  // Le code PIN est vérifié par les règles Firestore (document admin/pin, illisible depuis le site) :
+  // si le code est faux, l'écriture est refusée et rien n'est réinitialisé.
+  async reset(pin){
+    const id = doc(collection(db, "resets")).id, b = writeBatch(db);
+    b.set(doc(db, "resets", id), { pin: String(pin), at: serverTimestamp() });
+    b.set(cfgRef, { saison: id, depuis: serverTimestamp() });
+    await b.commit();
   }
 };
 </script>

@@ -2008,7 +2008,9 @@ function buildDonneesSpots(){
     const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.8,6,24,1,true),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false}));
     beam.position.y=3;g.add(beam);
     const spr=emojiSprite('🔓',1.1);spr.position.y=3.4;g.add(spr);
-    const pl=new THREE.PointLight(0xff5555,0.6,5);pl.position.y=2.2;g.add(pl);
+    // lumière hors du groupe (qui est masqué/affiché) et intensité 0 au départ : le nombre de lumières de la
+    // scène ne change jamais -> pas de recompilation des shaders (gel) quand on révèle/valide un poste
+    const pl=new THREE.PointLight(0xff5555,0,5);pl.position.set(s.x,2.2,s.z);scene.add(pl);
     s.group=g;s.ring=ring;s.beam=beam;s.spr=spr;s.light=pl;
   });
 }
@@ -3377,7 +3379,7 @@ function closeScenario(h){
   // Données : QCM réussi -> mission d'inspection (repérer 3 postes non sécurisés avant le QCM final)
   if(!h.resolved && !donneesMission && h.data.theme==='donnees' && h.answeredOk){
     donneesMission={h,spots:DONNEES_SPOTS.map(s=>({...s,found:false})),foundCount:0};
-    donneesMission.spots.forEach(s=>{if(s.group)s.group.visible=true;}); // révèle les repères (anneau+faisceau+icône)
+    donneesMission.spots.forEach(s=>{if(s.group)s.group.visible=true;if(s.light)s.light.intensity=0.6;}); // révèle les repères (anneau+faisceau+icône)
     h.ring.material.color=new THREE.Color(0xf08c00); // orange : mission en cours
     showDonneesMission();
     $("#modal").style.display="none";return;
@@ -3387,7 +3389,7 @@ function closeScenario(h){
     h.resolved=true;state.resolved++;
     h.ring.material.color=new THREE.Color(h.answeredOk?0x1faa59:0x8a93a6);
     h.ring.material.opacity=0.3;h.beam.visible=false;h.spr.material.opacity=0.35;
-    if(h.fireGroup){h.fireGroup.visible=false;if(h.fireLight)h.fireLight.visible=false;}
+    if(h.fireGroup){h.fireGroup.visible=false;if(h.fireLight)h.fireLight.intensity=0;} // intensité 0 plutôt que visible=false : changer le nombre de lumières force la recompilation de tous les shaders (lag)
     if(h.data.theme==='secours'&&collapsedRef&&h.answeredOk){spawnRescue('sst',collapsedRef.position.x,collapsedRef.position.z);}
     updateHud();
   }
@@ -3417,7 +3419,7 @@ function advanceMission(){
     $("#carry").style.display='none';
     h.resolved=true;state.resolved++;
     h.ring.material.color=new THREE.Color(0x1faa59);h.ring.material.opacity=0.3;h.beam.visible=false;h.spr.material.opacity=0.35;
-    if(h.fireGroup){h.fireGroup.visible=false;if(h.fireLight)h.fireLight.visible=false;}
+    if(h.fireGroup){h.fireGroup.visible=false;if(h.fireLight)h.fireLight.intensity=0;} // intensité 0 plutôt que visible=false : changer le nombre de lumières force la recompilation de tous les shaders (lag)
     $("#mission").style.display='none';$("#prompt").style.display='none';
     updateHud();
     if(state.resolved>=ACTIVE_SCENARIOS.length)endGame();
@@ -3598,7 +3600,7 @@ function showDonneesMission(){
 }
 function advanceDonnees(){
   const s=donneesMission.current;if(!s||s.found)return;
-  s.found=true;if(s.group)s.group.visible=false;
+  s.found=true;if(s.group)s.group.visible=false;if(s.light)s.light.intensity=0;
   donneesMission.foundCount=(donneesMission.foundCount||0)+1;
   toast("👀 "+s.reason,"warn",2600);
   if(donneesMission.foundCount>=donneesMission.spots.length){
@@ -3683,7 +3685,7 @@ function advanceEvac(){
   $("#mission").style.display='none';$("#prompt").style.display='none';
   if(!h.resolved){ h.resolved=true; state.resolved++;
     h.ring.material.color=new THREE.Color(0x1faa59);h.ring.material.opacity=0.3;h.beam.visible=false;h.spr.material.opacity=0.35;
-    if(h.fireGroup){h.fireGroup.visible=false;if(h.fireLight)h.fireLight.visible=false;}
+    if(h.fireGroup){h.fireGroup.visible=false;if(h.fireLight)h.fireLight.intensity=0;} // intensité 0 plutôt que visible=false : changer le nombre de lumières force la recompilation de tous les shaders (lag)
   }
   updateHud();
   if(state.resolved>=ACTIVE_SCENARIOS.length)endGame();
@@ -3831,6 +3833,8 @@ try{ if(sessionStorage.getItem('tgvcare_autostart')){ sessionStorage.removeItem(
 // erreur_cyber.webp, erreur_agression.webp, erreur_poste.webp, erreur_feu.webp
 const ERR_IMG_BY_THEME=Object.fromEntries(Object.keys(THEMES).map(t=>[t,`erreur_${t}.webp`]));
 const ERR_ICON_BY_THEME=Object.fromEntries(SCENARIOS.map(s=>[s.theme,s.ill]));
+// préchargement des images d'erreur : évite un à-coup au premier affichage
+setTimeout(()=>{['erreur.webp',...Object.values(ERR_IMG_BY_THEME)].forEach(src=>{const i=new Image();i.decoding='async';i.src=src;});},3000);
 /* ===================== Sons (Web Audio, sans fichier) ===================== */
 let actx=null;
 function audio(){ try{ if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended')actx.resume(); }catch(e){} return actx; }

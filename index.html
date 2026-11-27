@@ -3174,6 +3174,7 @@ function animate(){
   if(started&&!gamePaused&&!document.hidden)adaptResolution(rawDt);
   if(gamePaused){ renderFrame(); return; } // menu pause : monde figé (PNJ, missions, regard, déplacement)
   if(started&&!gameEnded)playTime+=Math.min(rawDt,1); // chrono classement (pause exclue)
+  if(started)updateAmbience3D(Math.min(rawDt,0.1)); // ambiance sonore extérieur / intérieur spatialisée
   if(clockLedTex&&t-lastClockDraw>1){ // horloge : heure réelle, rafraîchie chaque seconde
     lastClockDraw=t;
     const jours=['DIM','LUN','MAR','MER','JEU','VEN','SAM'],now=new Date();
@@ -3962,14 +3963,103 @@ function startAmbience(){
   const timer=setInterval(()=>{if(alarmFx||gamePaused)return;const r=Math.random();
     if(r<0.45)burst();else if(r<0.5){beep(1180,0.16,'sine',0.02,0);beep(1180,0.16,'sine',0.02,0.26);}},1000);
   amb={master,srcs:[hv,mu,lfo],timer};
-  master.gain.setTargetAtTime(alarmFx?0.07:0.28,a.currentTime,0.8);
+  startInterior();
+  ambLevels(0.8);
 }
 function stopAmbience(){
+  stopInterior();
   if(!amb)return;const a=actx,m=amb;amb=null;clearInterval(m.timer);
   try{m.master.gain.setTargetAtTime(0,a.currentTime,0.2);setTimeout(()=>{m.srcs.forEach(s=>{try{s.stop();}catch(e){}});try{m.master.disconnect();}catch(e){}},900);}catch(e){}
 }
 function setAmbience(on){ambOn=on;try{localStorage.setItem(AMB_KEY,on?'1':'0');}catch(e){}if(on&&started)startAmbience();else stopAmbience();refreshOptionLabels();}
-function duckAmbience(on){try{if(amb&&actx)amb.master.gain.setTargetAtTime(on?0.07:0.28,actx.currentTime,0.4);}catch(e){}}
+function duckAmbience(on){ambLevels(0.4);}
+/* ===== Ambiance intérieure spatialisée (fichiers sons/*.mp3) =====
+   Dehors : ambiance synthétique d'origine. Dedans (plateau) : brouhaha de fond + claviers placés sur les
+   postes des agents les plus proches + sonneries de téléphone ponctuelles, positionnés en 3D (HRTF).
+   Bascule en fondu en franchissant la porte ; l'alarme incendie atténue les deux. */
+const SND={bed:'sons/ambiance_bureau.mp3',typing:'sons/clavier.mp3',phone:'sons/telephone.mp3'};
+let inn=null, isInside=false;
+function playerInside(){const p=camera.position;return Math.abs(p.x)<ROOM.w/2&&Math.abs(p.z)<ROOM.d/2;}
+function ambLevels(tc){ // niveaux cibles extérieur / intérieur selon position et alarme
+  try{const a=actx;if(!a)return;const t=a.currentTime;
+    if(amb)amb.master.gain.setTargetAtTime(isInside?0:(alarmFx?0.07:0.28),t,tc);
+    if(inn)inn.bus.gain.setTargetAtTime(isInside?(alarmFx?0.12:0.55):0,t,tc);
+  }catch(e){}
+}
+const sndCache={};
+function loadSnd(a,url){
+  if(!sndCache[url])sndCache[url]=fetch(url).then(r=>{if(!r.ok)throw new Error(url);return r.arrayBuffer();})
+    .then(b=>new Promise((ok,ko)=>a.decodeAudioData(b,ok,ko)));
+  return sndCache[url];
+}
+function mkPanner(a){
+  const p=a.createPanner();p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=1.6;p.rolloffFactor=1.3;p.maxDistance=30;
+  return p;
+}
+function setPos(p,x,y,z){if(p.positionX){p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;}else p.setPosition(x,y,z);}
+function startInterior(){
+  if(inn||!ambOn)return;const a=audio();if(!a)return;
+  const bus=a.createGain();bus.gain.value=0;bus.connect(a.destination);
+  inn={bus,srcs:[],slots:[],nextPhone:a.currentTime+8+Math.random()*10,reassignT:0,ready:false};
+  const me=inn;
+  Promise.all([loadSnd(a,SND.bed),loadSnd(a,SND.typing),loadSnd(a,SND.phone)]).then(([bed,typ,ph])=>{
+    if(inn!==me)return; // arrêtée entre-temps
+    const trim=(s,b)=>{s.loop=true;s.loopStart=0.03;s.loopEnd=b.duration-0.03;}; // ignore le remplissage MP3 en bord de fichier
+    // fond : brouhaha non spatialisé
+    const bs=a.createBufferSource(),bg=a.createGain();bs.buffer=bed;trim(bs,bed);bg.gain.value=0.55;bs.connect(bg);bg.connect(bus);
+    bs.start(0,Math.random()*bed.duration*0.8);me.srcs.push(bs);
+    // claviers : 5 sources réutilisées, rattachées aux agents assis les plus proches
+    for(let i=0;i<5;i++){
+      const s=a.createBufferSource(),g=a.createGain(),p=mkPanner(a);s.buffer=typ;trim(s,typ);s.playbackRate.value=0.9+Math.random()*0.2;
+      g.gain.value=0;s.connect(g);g.connect(p);p.connect(bus);s.start(0,Math.random()*typ.duration*0.9);me.srcs.push(s);
+      me.slots.push({g,p,npc:null,on:false,toggleT:a.currentTime+Math.random()*3});
+    }
+    me.phone=ph;me.ready=true;
+  }).catch(e=>console.warn('Ambiance intérieure indisponible',e));
+}
+function stopInterior(){
+  if(!inn)return;const a=actx,m=inn;inn=null;
+  try{m.bus.gain.setTargetAtTime(0,a.currentTime,0.2);setTimeout(()=>{m.srcs.forEach(s=>{try{s.stop();}catch(e){}});try{m.bus.disconnect();}catch(e){}},900);}catch(e){}
+}
+const _fw=new THREE.Vector3();
+function updateAmbience3D(dt){
+  const a=actx;if(!a||!ambOn)return;
+  const inside=playerInside();
+  if(inside!==isInside){isInside=inside;ambLevels(0.6);}
+  if(!inn||!inn.ready||a.state!=='running')return;
+  // auditeur = caméra
+  const L=a.listener,c=camera.position;camera.getWorldDirection(_fw);
+  if(L.positionX){L.positionX.value=c.x;L.positionY.value=c.y;L.positionZ.value=c.z;L.forwardX.value=_fw.x;L.forwardY.value=_fw.y;L.forwardZ.value=_fw.z;L.upX.value=0;L.upY.value=1;L.upZ.value=0;}
+  else{L.setPosition(c.x,c.y,c.z);L.setOrientation(_fw.x,_fw.y,_fw.z,0,1,0);}
+  if(!isInside)return;
+  const now=a.currentTime;
+  // réattribution des claviers aux agents assis (état idle) les plus proches, 1 fois par seconde
+  inn.reassignT-=dt;
+  if(inn.reassignT<=0){inn.reassignT=1;
+    const near=NPCS.filter(n=>n.state==='idle').map(n=>({n,d:Math.hypot(n.home.x-c.x,n.home.z-c.z)})).filter(o=>o.d<16)
+      .sort((x,y)=>x.d-y.d).slice(0,inn.slots.length).map(o=>o.n);
+    inn.slots.forEach(sl=>{if(sl.npc&&!near.includes(sl.npc)){sl.npc=null;sl.g.gain.setTargetAtTime(0,now,0.15);}});
+    near.forEach(n=>{if(inn.slots.some(sl=>sl.npc===n))return;const sl=inn.slots.find(x=>!x.npc);if(!sl)return;
+      sl.npc=n;setPos(sl.p,n.home.x,1.0,n.home.z);sl.on=Math.random()<0.6;sl.toggleT=now+1+Math.random()*4;});
+  }
+  // chaque agent tape par intermittence (pauses aléatoires) ; clavier coupé pendant l'alarme
+  inn.slots.forEach(sl=>{
+    if(!sl.npc)return;
+    if(now>=sl.toggleT){sl.on=!sl.on;sl.toggleT=now+(sl.on?2+Math.random()*6:1.5+Math.random()*5);}
+    sl.g.gain.setTargetAtTime(sl.on&&!alarmFx?0.9:0,now,0.25);
+  });
+  // téléphone qui sonne de temps en temps sur un poste occupé (1 ou 2 sonneries)
+  if(now>=inn.nextPhone){
+    inn.nextPhone=now+18+Math.random()*25;
+    const cands=NPCS.filter(n=>n.state==='idle').filter(n=>{const d=Math.hypot(n.home.x-c.x,n.home.z-c.z);return d>3&&d<20;});
+    if(cands.length&&!alarmFx&&!gamePaused){
+      const n=cands[(Math.random()*cands.length)|0],s=a.createBufferSource(),g=a.createGain(),p=mkPanner(a);
+      s.buffer=inn.phone;g.gain.value=0.7;setPos(p,n.home.x,0.9,n.home.z);s.connect(g);g.connect(p);p.connect(inn.bus);
+      s.start();if(Math.random()<0.5){g.gain.setTargetAtTime(0,now+2.2,0.05);s.stop(now+2.6);} // décroché après 1 sonnerie
+      s.onended=()=>{try{p.disconnect();}catch(e){}};
+    }
+  }
+}
 let alarmTimer=null;
 let alarmFx=false,alarmWas=false,lastBlur=false;
 function setAlarmFx(on){alarmFx=on;const el=$("#alarm");if(el)el.style.display=on?'block':'none';duckAmbience(on);}

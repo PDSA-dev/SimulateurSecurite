@@ -119,6 +119,20 @@
   .score-circle{width:120px;height:120px;border-radius:50%;margin:4px auto 12px;display:flex;flex-direction:column;
     align-items:center;justify-content:center;color:#fff}
   .score-circle b{font-size:32px;line-height:1}.score-circle span{font-size:10px;letter-spacing:.5px}
+  .lb{margin:16px auto 4px;max-width:420px;text-align:left}
+  .lb h3{font-size:15px;margin-bottom:8px;text-align:center}
+  .lbForm{display:flex;gap:8px;margin-bottom:10px}
+  .lbForm input{flex:1;min-width:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:11px;
+    color:#fff;padding:11px 13px;font-size:14px;outline:none}
+  .lbForm input:focus{border-color:var(--carmillon)}
+  .lbForm .btn{margin-top:0;padding:11px 16px;font-size:14px;white-space:nowrap}
+  .lbForm .btn:disabled{opacity:.5;cursor:default;transform:none;box-shadow:none}
+  .lbMsg{font-size:12.5px;opacity:.8;text-align:center;margin:6px 0}
+  .lbTable{width:100%;border-collapse:collapse;font-size:13px}
+  .lbTable th{font-size:11px;font-weight:600;opacity:.65;text-align:left;padding:4px 8px;letter-spacing:.3px}
+  .lbTable td{padding:7px 8px;border-top:1px solid rgba(255,255,255,.08);font-variant-numeric:tabular-nums}
+  .lbTable td.n{text-align:right}.lbTable th.n{text-align:right}
+  .lbTable tr.me td{background:rgba(205,0,55,.22);font-weight:700}
   .badge{display:inline-block;padding:8px 18px;border-radius:30px;font-weight:700;font-size:14px;color:#fff}
   .legend{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0;text-align:left}
   .legend div{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#dde6f7;border-radius:10px;padding:9px 12px;font-size:12.5px;display:flex;gap:8px;align-items:center}
@@ -557,6 +571,7 @@ const WORLD={minX:-26,maxX:40,minZ:-28,maxZ:60};            // bornes de déplac
 
 /* ===================== État ===================== */
 const state={score:0,safety:100,resolved:0};
+let playTime=0,gameEnded=false; // chrono du parcours (en secondes, hors pause) pour le classement
 const $=s=>document.querySelector(s);
 
 let renderer,scene,camera,clock;
@@ -3132,6 +3147,7 @@ function animate(){
   frameN++;
   if(started&&!gamePaused&&!document.hidden)adaptResolution(rawDt);
   if(gamePaused){ renderFrame(); return; } // menu pause : monde figé (PNJ, missions, regard, déplacement)
+  if(started&&!gameEnded)playTime+=Math.min(rawDt,1); // chrono classement (pause exclue)
   if(clockLedTex&&t-lastClockDraw>1){ // horloge : heure réelle, rafraîchie chaque seconde
     lastClockDraw=t;
     const jours=['DIM','LUN','MAR','MER','JEU','VEN','SAM'],now=new Date();
@@ -3678,11 +3694,14 @@ function updateHud(){
   el.style.background=state.safety>66?"linear-gradient(90deg,#1faa59,#7be0a8)":state.safety>33?"linear-gradient(90deg,#f08c00,#ffd166)":"linear-gradient(90deg,#e03131,#ff8787)";
 }
 function endGame(){
+  if(gameEnded)return; gameEnded=true;
   // points max par thème selon le nombre de quiz scorés dans la mission :
   // feu = QCM + choix extincteur (20) ; dae = QCM + numéro d'urgence + utilisation DAE (30) ;
   // donnees = QCM + QCM final d'inspection (20) ; les autres thèmes n'ont qu'un seul QCM (10).
   const PTS_BY_THEME={feu:20,dae:30,donnees:20};
   const max=ACTIVE_SCENARIOS.reduce((sum,s)=>sum+(PTS_BY_THEME[s.theme]||10),0),pct=Math.round(state.score/max*100);
+  // chaque bonne réponse vaut 10 pts -> nombre de bonnes réponses / nombre de questions du parcours
+  const correct=Math.round(state.score/10),total=max/10,secs=playTime,fullRun=ACTIVE_SCENARIOS.length===SCENARIOS.length;
   let color,badge,msg;
   if(pct>=80){color="#1faa59";badge="Référent·e sécurité 🏅";msg="Excellent ! Tu adoptes les bons réflexes et tu protèges l'équipe et les clients.";}
   else if(pct>=50){color="#f08c00";badge="Sur la bonne voie 👍";msg="Pas mal ! Quelques réflexes à consolider pour devenir un vrai relais de sécurité.";}
@@ -3691,13 +3710,56 @@ function endGame(){
     <div class="score-circle" style="background:${color}"><b>${pct}%</b><span>RÉUSSITE</span></div>
     <div class="badge" style="background:${color}">${badge}</div>
     <h2 style="margin-top:12px">Parcours terminé</h2><p>${msg}</p>
-    <p style="font-size:13px">Score <b>${state.score}</b> / ${max} · Sécurité finale <b>${state.safety}%</b></p>
+    <p style="font-size:13px">Bonnes réponses <b>${correct}</b> / ${total} · Temps <b>${fmtTime(secs)}</b> · Sécurité finale <b>${state.safety}%</b></p>
+    <div class="lb" id="lb">
+      <h3>🏆 Classement</h3>
+      ${fullRun?`<div class="lbForm"><input id="lbName" maxlength="20" placeholder="Ton prénom ou pseudo" autocomplete="off">
+        <button class="btn" id="lbSend">Publier</button></div>`
+        :`<div class="lbMsg">Le classement est réservé au parcours complet (toutes les thématiques).</div>`}
+      <div class="lbMsg" id="lbMsg"></div>
+      <div id="lbList"><div class="lbMsg">Chargement du classement…</div></div>
+    </div>
     <button class="btn" id="againBtn">↻ Recommencer</button>`;
   $("#end").style.display="flex";$("#againBtn").onclick=()=>location.reload();
+  setupLeaderboard({correct,total,secs,fullRun});
+}
+function fmtTime(s){s=Math.round(s);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
+function escHtml(t){return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function renderLeaderboard(rows,myId){
+  const el=$("#lbList"); if(!el)return;
+  if(!rows.length){el.innerHTML='<div class="lbMsg">Aucun score pour l\'instant : sois le premier !</div>';return;}
+  const medal=i=>["🥇","🥈","🥉"][i]||(i+1);
+  el.innerHTML=`<table class="lbTable"><tr><th>#</th><th>Nom</th><th class="n">Bonnes rép.</th><th class="n">Temps</th></tr>
+    ${rows.map((r,i)=>`<tr class="${r.id===myId?'me':''}"><td>${medal(i)}</td><td>${escHtml(r.nom)}</td><td class="n">${r.score}</td><td class="n">${fmtTime(r.temps)}</td></tr>`).join("")}</table>`;
+}
+async function setupLeaderboard({correct,total,secs,fullRun}){
+  const msg=t=>{const m=$("#lbMsg");if(m)m.textContent=t;};
+  // le module Firebase (script type=module) peut finir de charger après la fin de partie
+  for(let i=0;i<50&&!window.TGVLeaderboard;i++)await new Promise(r=>setTimeout(r,100));
+  const LB=window.TGVLeaderboard;
+  if(!LB){$("#lbList").innerHTML='<div class="lbMsg">Classement indisponible (pas de connexion ?).</div>';const b=$("#lbSend");if(b)b.disabled=true;return;}
+  try{renderLeaderboard(await LB.top(10));}catch(e){console.warn(e);$("#lbList").innerHTML='<div class="lbMsg">Classement indisponible pour le moment.</div>';}
+  if(!fullRun)return;
+  const inp=$("#lbName"),btn=$("#lbSend");
+  try{inp.value=localStorage.getItem("tgvcare_lb_name")||"";}catch(e){}
+  const send=async()=>{
+    const nom=inp.value.trim();
+    if(!nom){msg("Saisis ton prénom ou un pseudo.");inp.focus();return;}
+    btn.disabled=true;inp.disabled=true;msg("Envoi…");
+    try{
+      try{localStorage.setItem("tgvcare_lb_name",nom);}catch(e){}
+      const id=await LB.submit(nom,correct,Math.max(1,Math.round(secs)));
+      const rows=await LB.top(10);renderLeaderboard(rows,id);
+      msg(rows.some(r=>r.id===id)?"Score publié, bravo !":"Score publié ! Pas encore dans le top 10, retente ta chance.");
+      btn.style.display="none";
+    }catch(e){console.warn(e);msg("Échec de l'envoi, réessaie.");btn.disabled=false;inp.disabled=false;}
+  };
+  btn.onclick=send; inp.addEventListener("keydown",e=>{if(e.key==="Enter")send();});
 }
 
 /* ===================== Clavier ===================== */
 function key(e,d){
+  if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'))return; // saisie du nom (classement)
   switch(e.code){
     case'KeyW':case'ArrowUp':case'KeyZ':move.f=d;break;
     case'KeyS':case'ArrowDown':move.b=d;break;
@@ -4137,6 +4199,32 @@ renderPadSettings();refreshOptionLabels();
   }
   requestAnimationFrame(loop);
 })();
+</script>
+<script type="module">
+// ===== Classement en ligne (Firebase Firestore, projet simulateur-securite-tgvcare) =====
+// La config Web Firebase est publique par nature : la protection est assurée par les règles Firestore.
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyConuMUpBCqpl4JQP0s-3QcpWBYcxO88OE",
+  authDomain: "simulateur-securite-tgvcare.firebaseapp.com",
+  projectId: "simulateur-securite-tgvcare",
+  storageBucket: "simulateur-securite-tgvcare.firebasestorage.app",
+  messagingSenderId: "568587587177",
+  appId: "1:568587587177:web:6954f59d5cd28210395cf8"
+});
+const db = getFirestore(app), col = collection(db, "classement");
+window.TGVLeaderboard = {
+  async submit(nom, score, temps){
+    const ref = await addDoc(col, { nom: String(nom).slice(0, 20), score, temps, date: serverTimestamp() });
+    return ref.id;
+  },
+  async top(n = 10){
+    const snap = await getDocs(query(col, orderBy("score", "desc"), orderBy("temps", "asc"), limit(n)));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+};
 </script>
 </body>
 </html>

@@ -3190,7 +3190,7 @@ function animate(){
     if(h.resolved)return;
     h.spr.position.y=3.4+Math.sin(t*2+h.group.position.x)*0.18;
     h.group.rotation.y=t*0.5;
-    const inMission=(fireMission&&h===fireMission.h)||(evacMission&&h===evacMission.h)||(daeMission&&h===daeMission.h);
+    const inMission=(fireMission&&h===fireMission.h)||(evacMission&&h===evacMission.h)||(daeMission&&h===daeMission.h)||(donneesMission&&h===donneesMission.h);
     if(!inMission) h.ring.material.opacity=0.45+Math.sin(t*3)*0.25;
     if(inMission) return; // mission incendie en cours : on n'ouvre pas le QCM à nouveau
     const d=camera.position.distanceTo(h.group.position);
@@ -3375,7 +3375,7 @@ function closeScenario(h){
     return;
   }
   // Données : QCM réussi -> mission d'inspection (repérer 3 postes non sécurisés avant le QCM final)
-  if(!h.resolved && h.data.theme==='donnees' && h.answeredOk){
+  if(!h.resolved && !donneesMission && h.data.theme==='donnees' && h.answeredOk){
     donneesMission={h,spots:DONNEES_SPOTS.map(s=>({...s,found:false})),foundCount:0};
     donneesMission.spots.forEach(s=>{if(s.group)s.group.visible=true;}); // révèle les repères (anneau+faisceau+icône)
     h.ring.material.color=new THREE.Color(0xf08c00); // orange : mission en cours

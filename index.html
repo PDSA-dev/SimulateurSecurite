@@ -3175,6 +3175,7 @@ function animate(){
   if(gamePaused){ renderFrame(); return; } // menu pause : monde figé (PNJ, missions, regard, déplacement)
   if(started&&!gameEnded)playTime+=Math.min(rawDt,1); // chrono classement (pause exclue)
   if(started)updateAmbience3D(Math.min(rawDt,0.1)); // ambiance sonore extérieur / intérieur spatialisée
+  if(started)updateSteps(Math.hypot(vel.x,vel.z)); // bruit de pas
   if(clockLedTex&&t-lastClockDraw>1){ // horloge : heure réelle, rafraîchie chaque seconde
     lastClockDraw=t;
     const jours=['DIM','LUN','MAR','MER','JEU','VEN','SAM'],now=new Date();
@@ -3928,8 +3929,26 @@ function beep(freq,dur,type,vol,when){ const a=audio(); if(!a)return;
   const o=a.createOscillator(),g=a.createGain(); o.type=type||'square';o.frequency.value=freq;o.connect(g);g.connect(a.destination);
   const t=a.currentTime+(when||0); g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol||0.2,t+0.012);
   g.gain.setValueAtTime(vol||0.2,t+dur-0.04);g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.start(t);o.stop(t+dur+0.02); }
-function playError(){ beep(200,0.16,'square',0.28,0); beep(150,0.30,'square',0.28,0.17); } // buzzer "mauvaise réponse"
-function playVictory(){ // jingle "bonne réponse" inspiré SNCF : Do, Sol, Lab, Mib — ~105 bpm
+/* ---------- effets sonores (fichiers sons/*.mp3, repli sur les sons synthétisés tant qu'ils ne sont pas chargés) ---------- */
+const SFX_URL={ok:'sons/bonne_reponse.mp3',ko:'sons/mauvaise_reponse.mp3',alarm:'sons/alarme_incendie.mp3',steps:'sons/pas.mp3'};
+const SFX={};
+function preloadSfx(){const a=audio();if(!a)return;
+  Object.entries(SFX_URL).forEach(([k,u])=>{if(SFX[k]!==undefined)return;SFX[k]=null;loadSnd(a,u).then(b=>{SFX[k]=b;}).catch(e=>console.warn('son',u,e));});}
+function playSfx(k,vol){const a=audio(),b=SFX[k];if(!a||!b)return false;
+  const s=a.createBufferSource(),g=a.createGain();s.buffer=b;g.gain.value=vol;s.connect(g);g.connect(a.destination);s.start();return true;}
+// pas : boucle jouée en continu, volume et cadence suivent la vitesse du joueur
+let steps=null;
+function updateSteps(speed){
+  const a=actx;if(!a||a.state!=='running')return;
+  if(!steps){const b=SFX.steps;if(!b)return;
+    const s=a.createBufferSource(),g=a.createGain();s.buffer=b;s.loop=true;s.loopStart=0.03;s.loopEnd=b.duration-0.03;g.gain.value=0;
+    s.connect(g);g.connect(a.destination);s.start();steps={s,g};}
+  const walking=speed>0.7&&!gamePaused&&!isModalOpen();
+  steps.g.gain.setTargetAtTime(walking?Math.min(1,speed/3)*0.55:0,a.currentTime,walking?0.08:0.12);
+  steps.s.playbackRate.setTargetAtTime(Math.max(0.85,Math.min(1.4,0.75+speed/9)),a.currentTime,0.2);
+}
+function playError(){ if(playSfx('ko',0.55))return; beep(200,0.16,'square',0.28,0); beep(150,0.30,'square',0.28,0.17); } // "mauvaise réponse"
+function playVictory(){ if(playSfx('ok',0.6))return; // jingle "bonne réponse" inspiré SNCF : Do, Sol, Lab, Mib — ~105 bpm
   const beat=60/105, croche=beat*0.5, noire=beat, blanche=beat*2, respir=0.09;
   let t=0;
   beep(523.25,croche,'sine',0.26,t);  t+=croche;            // Do — croche
@@ -4063,10 +4082,12 @@ function updateAmbience3D(dt){
 let alarmTimer=null;
 let alarmFx=false,alarmWas=false,lastBlur=false;
 function setAlarmFx(on){alarmFx=on;const el=$("#alarm");if(el)el.style.display=on?'block':'none';duckAmbience(on);}
-function startAlarm(){ if(alarmTimer)return; setAlarmFx(true); if(!audio())return;
+function startAlarm(){ if(alarmTimer)return; setAlarmFx(true); const a=audio(); if(!a)return;
+  if(SFX.alarm){ const s=a.createBufferSource(),g=a.createGain();s.buffer=SFX.alarm;s.loop=true;g.gain.value=0.5;s.connect(g);g.connect(a.destination);s.start();
+    alarmTimer={stop:()=>{try{g.gain.setTargetAtTime(0,a.currentTime,0.08);s.stop(a.currentTime+0.4);}catch(e){}}}; return; }
   const tick=()=>{ beep(900,0.28,'square',0.22,0); beep(750,0.28,'square',0.22,0.34); };
   tick(); alarmTimer=setInterval(tick,0.9*1000); }
-function stopAlarm(){ if(alarmTimer){clearInterval(alarmTimer);alarmTimer=null;} setAlarmFx(false); }
+function stopAlarm(){ if(alarmTimer){ if(alarmTimer.stop)alarmTimer.stop(); else clearInterval(alarmTimer); alarmTimer=null;} setAlarmFx(false); }
 function showErreur(theme){
   const e=$("#erreur"),ei=$("#erreurImg"),fb=$("#erreurFallback");
   fb.querySelector('.em').textContent=ERR_ICON_BY_THEME[theme]||'😡';
@@ -4098,6 +4119,7 @@ function scanBadge3D(){
 $("#startBtn").onclick=()=>{
   $("#intro").style.display="none";started=true;
   audio(); // débloque le son (geste utilisateur)
+  preloadSfx();
   startAmbience();
 };
 // regard : position de la souris à l'écran (pas besoin de cliquer/verrouiller le pointeur)

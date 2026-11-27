@@ -2100,7 +2100,9 @@ function buildDonneesProps(s){
       ['RE: Remboursement dossier DUPONT','Votre facture client n° 8841','Planning équipe semaine 49','RIB à mettre à jour — M. MARTIN','Compte rendu réunion sécurité']
         .forEach((t,i)=>{g.fillStyle=i%2?'#fff':'#e4ebf5';g.fillRect(w*0.21,h*(0.14+i*0.15),w*0.78,h*0.14);g.fillStyle='#1d2b40';g.fillText(t,w*0.23,h*(0.18+i*0.15));});
     })):null;
-    s.fix=()=>{const t=TEX_LOCK();left.mat.map=t;left.mat.needsUpdate=true;if(right){right.mat.map=t;right.mat.needsUpdate=true;}};
+    s.fix=()=>{ // écrans en veille : dalle noire avec un petit voyant
+      const t=canvasTex(256,150,(g,w,h)=>{g.fillStyle='#050608';g.fillRect(0,0,w,h);g.fillStyle='#e0a800';g.beginPath();g.arc(w-14,h-10,3,0,7);g.fill();});
+      [left,right].forEach(o=>{if(!o)return;o.mat.map=t;o.mat.needsUpdate=true;});};
     return;
   }
   if(s.kind==='postit'){
@@ -3738,8 +3740,7 @@ function advanceDonnees(){
   const s=donneesMission.current;if(!s||s.found)return;
   s.found=true;if(s.group)s.group.visible=false;if(s.light)s.light.intensity=0;
   donneesMission.foundCount=(donneesMission.foundCount||0)+1;
-  if(s.fix)try{s.fix();}catch(e){}
-  toast("👀 "+s.reason+(s.fixed?" ✅ "+s.fixed:""),"warn",3200);
+  toast("👀 "+s.reason,"warn",2600);
   if(donneesMission.foundCount>=donneesMission.spots.length){
     $("#mission").style.display='none';$("#prompt").style.display='none';nearMission=false;
     setTimeout(()=>openDonneesFinalModal(),900); // laisse le temps de lire le dernier toast
@@ -3774,7 +3775,9 @@ function answerDonneesFinal(idx){
   const sc=DONNEES_FINAL_Q,c=sc.choices[idx];
   $("#choices").querySelectorAll(".choice").forEach((b,k)=>{b.disabled=true;
     if(sc.choices[k].ok)b.classList.add("good");else if(k===idx)b.classList.add("bad");else b.classList.add("dim");});
-  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();}else{state.safety=Math.max(0,state.safety-18);showErreur('donnees');}
+  if(c.ok){state.score+=10;state.safety=Math.min(100,state.safety+5);playVictory();
+    DONNEES_SPOTS.forEach(s=>{if(s.fix)try{s.fix();}catch(e){}}); // bonne réponse : écran en veille, post-it et document retirés
+  }else{state.safety=Math.max(0,state.safety-18);showErreur('donnees');}
   const fb=$("#fb");fb.className="feedback show "+(c.ok?"ok":"ko");
   fb.innerHTML=`<h3>${c.ok?"✅ Bonne réaction !":"❌ Réaction à risque"}</h3><div>${c.fb}</div>
     <div class="tip">💡 <b>À retenir :</b> ${sc.tip}</div>`;

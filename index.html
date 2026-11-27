@@ -127,6 +127,10 @@
   .lbForm input:focus{border-color:var(--carmillon)}
   .lbForm .btn{margin-top:0;padding:11px 16px;font-size:14px;white-space:nowrap}
   .lbForm .btn:disabled{opacity:.5;cursor:default;transform:none;box-shadow:none}
+  .lbForm input.site{flex:1.2}
+  .lbSel{width:100%;margin:2px 0 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#fff;padding:8px 10px;font-size:13px}
+  .lbSel option{background:#14213d}
+  .lbSite{display:block;font-size:11px;opacity:.6;font-weight:400}
   .lbMsg{font-size:12.5px;opacity:.8;text-align:center;margin:6px 0}
   .lbTable{width:100%;border-collapse:collapse;font-size:13px}
   .lbTable th{font-size:11px;font-weight:600;opacity:.65;text-align:left;padding:4px 8px;letter-spacing:.3px}
@@ -3735,8 +3739,9 @@ function endGame(){
     <p style="font-size:13px">Bonnes réponses <b>${correct}</b> / ${total} · Temps <b>${fmtTime(secs)}</b> · Sécurité finale <b>${state.safety}%</b></p>
     <div class="lb" id="lb">
       <h3>🏆 Classement</h3>
-      ${fullRun?`<div class="lbForm"><input id="lbName" maxlength="20" placeholder="Ton prénom ou pseudo" autocomplete="off">
-        <button class="btn" id="lbSend">Publier</button></div>`
+      ${fullRun?`<div class="lbForm"><input id="lbName" maxlength="20" placeholder="Ton prénom" autocomplete="off">
+        <input id="lbSite" class="site" maxlength="40" placeholder="Ton site (ex. RCAD Béziers)" list="lbSites" autocomplete="off">
+        <button class="btn" id="lbSend">Publier</button></div><datalist id="lbSites"></datalist>`
         :`<div class="lbMsg">Le classement est réservé au parcours complet (toutes les thématiques).</div>`}
       <div class="lbMsg" id="lbMsg"></div>
       <div id="lbList"><div class="lbMsg">Chargement du classement…</div></div>
@@ -3747,43 +3752,67 @@ function endGame(){
 }
 function fmtTime(s){s=Math.round(s);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
 function escHtml(t){return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-function renderLeaderboard(rows,myId,elId){
-  const el=$("#"+(elId||"lbList")); if(!el)return;
-  if(!rows.length){el.innerHTML='<div class="lbMsg">Aucun score pour l\'instant : sois le premier !</div>';return;}
-  const medal=i=>["🥇","🥈","🥉"][i]||(i+1);
-  el.innerHTML=`<table class="lbTable"><tr><th>#</th><th>Nom</th><th class="n">Bonnes rép.</th><th class="n">Temps</th></tr>
-    ${rows.map((r,i)=>`<tr class="${r.id===myId?'me':''}"><td>${medal(i)}</td><td>${escHtml(r.nom)}</td><td class="n">${r.score}</td><td class="n">${fmtTime(r.temps)}</td></tr>`).join("")}</table>`;
+// Site : texte libre, regroupé par une clé normalisée (sans accents/majuscules/ponctuation) pour que
+// « RCAD Béziers », « rcad beziers » ou « RCAD - Béziers » comptent comme le même site.
+function siteKey(t){return String(t||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();}
+function rankRows(rows){return rows.slice().sort((a,b)=>b.score-a.score||a.temps-b.temps);}
+// Sites présents dans la saison : libellé le plus utilisé pour chaque clé, triés par nombre de scores
+function siteList(all){
+  const m=new Map();
+  all.forEach(r=>{if(!r.siteKey)return;const e=m.get(r.siteKey)||{key:r.siteKey,n:0,labels:{}};e.n++;e.labels[r.site]=(e.labels[r.site]||0)+1;m.set(r.siteKey,e);});
+  return [...m.values()].map(e=>({key:e.key,n:e.n,label:Object.entries(e.labels).sort((x,y)=>y[1]-x[1])[0][0]}))
+    .sort((x,y)=>y.n-x.n||x.label.localeCompare(y.label,"fr"));
 }
+// Classement avec sélecteur « Général / par site » ; all = tous les scores de la saison
+function renderBoard(elId,all,myId,selKey){
+  const el=$("#"+elId); if(!el)return;
+  const sites=siteList(all);
+  if(selKey&&!sites.some(x=>x.key===selKey))selKey="";
+  const rows=rankRows(selKey?all.filter(r=>r.siteKey===selKey):all).slice(0,10);
+  const medal=i=>["🥇","🥈","🥉"][i]||(i+1);
+  const sel=`<select class="lbSel" data-nav>
+      <option value="">🌍 Classement général (${all.length})</option>
+      ${sites.map(x=>`<option value="${escHtml(x.key)}" ${x.key===selKey?"selected":""}>📍 ${escHtml(x.label)} (${x.n})</option>`).join("")}
+    </select>`;
+  el.innerHTML=sel+(rows.length?`<table class="lbTable"><tr><th>#</th><th>Nom · site</th><th class="n">Bonnes rép.</th><th class="n">Temps</th></tr>
+    ${rows.map((r,i)=>`<tr class="${r.id===myId?'me':''}"><td>${medal(i)}</td><td>${escHtml(r.nom)}${r.site?`<span class="lbSite">${escHtml(r.site)}</span>`:""}</td><td class="n">${r.score}</td><td class="n">${fmtTime(r.temps)}</td></tr>`).join("")}</table>`
+    :'<div class="lbMsg">Aucun score pour l\'instant : sois le premier !</div>');
+  el.querySelector("select").onchange=e=>renderBoard(elId,all,myId,e.target.value);
+}
+function fillSiteDatalist(all){const dl=$("#lbSites");if(dl)dl.innerHTML=siteList(all).map(x=>`<option value="${escHtml(x.label)}">`).join("");}
 async function setupLeaderboard({correct,total,secs,fullRun}){
   const msg=t=>{const m=$("#lbMsg");if(m)m.textContent=t;};
-  // le module Firebase (script type=module) peut finir de charger après la fin de partie
-  for(let i=0;i<50&&!window.TGVLeaderboard;i++)await new Promise(r=>setTimeout(r,100));
-  const LB=window.TGVLeaderboard;
+  const LB=await waitLB();
   if(!LB){$("#lbList").innerHTML='<div class="lbMsg">Classement indisponible (pas de connexion ?).</div>';const b=$("#lbSend");if(b)b.disabled=true;return;}
-  try{renderLeaderboard(await LB.top(10));}catch(e){console.warn(e);$("#lbList").innerHTML='<div class="lbMsg">Classement indisponible pour le moment.</div>';}
+  let all=[];
+  try{all=await LB.all();renderBoard("lbList",all);fillSiteDatalist(all);}catch(e){console.warn(e);$("#lbList").innerHTML='<div class="lbMsg">Classement indisponible pour le moment.</div>';}
   if(!fullRun)return;
-  const inp=$("#lbName"),btn=$("#lbSend");
-  try{inp.value=localStorage.getItem("tgvcare_lb_name")||"";}catch(e){}
+  const inp=$("#lbName"),sit=$("#lbSite"),btn=$("#lbSend");
+  try{inp.value=localStorage.getItem("tgvcare_lb_name")||"";sit.value=localStorage.getItem("tgvcare_lb_site")||"";}catch(e){}
   const send=async()=>{
-    const nom=inp.value.trim();
-    if(!nom){msg("Saisis ton prénom ou un pseudo.");inp.focus();return;}
-    btn.disabled=true;inp.disabled=true;msg("Envoi…");
+    const nom=inp.value.trim(),site=sit.value.trim().replace(/\s+/g," ");
+    if(!nom){msg("Saisis ton prénom.");inp.focus();return;}
+    if(siteKey(site).length<2){msg("Indique ton site (ex. RCAD Béziers).");sit.focus();return;}
+    // si le site existe déjà (même clé), on reprend son libellé pour garder un affichage homogène
+    const known=siteList(all).find(x=>x.key===siteKey(site)), label=known?known.label:site;
+    btn.disabled=true;inp.disabled=true;sit.disabled=true;msg("Envoi…");
     try{
-      try{localStorage.setItem("tgvcare_lb_name",nom);}catch(e){}
-      const id=await LB.submit(nom,correct,Math.max(1,Math.round(secs)));
-      const rows=await LB.top(10);renderLeaderboard(rows,id);
-      msg(rows.some(r=>r.id===id)?"Score publié, bravo !":"Score publié ! Pas encore dans le top 10, retente ta chance.");
+      try{localStorage.setItem("tgvcare_lb_name",nom);localStorage.setItem("tgvcare_lb_site",label);}catch(e){}
+      const id=await LB.submit(nom,label,siteKey(label),correct,Math.max(1,Math.round(secs)));
+      all=await LB.all();renderBoard("lbList",all,id,siteKey(label));
+      const rG=rankRows(all).findIndex(r=>r.id===id)+1, rS=rankRows(all.filter(r=>r.siteKey===siteKey(label))).findIndex(r=>r.id===id)+1;
+      msg(`Score publié ! ${rG?`${rG}ᵉ au général`:""}${rS?` · ${rS}ᵉ sur ${label}`:""}`);
       btn.style.display="none";
-    }catch(e){console.warn(e);msg("Échec de l'envoi, réessaie.");btn.disabled=false;inp.disabled=false;}
+    }catch(e){console.warn(e);msg("Échec de l'envoi, réessaie.");btn.disabled=false;inp.disabled=false;sit.disabled=false;}
   };
-  btn.onclick=send; inp.addEventListener("keydown",e=>{if(e.key==="Enter")send();});
+  btn.onclick=send; [inp,sit].forEach(x=>x.addEventListener("keydown",e=>{if(e.key==="Enter")send();}));
 }
 // ----- Écran « Classement » depuis la page de démarrage + réinitialisation protégée par code PIN -----
 async function waitLB(){for(let i=0;i<50&&!window.TGVLeaderboard;i++)await new Promise(r=>setTimeout(r,100));return window.TGVLeaderboard;}
 async function refreshLbScreen(){
   const LB=await waitLB(),el=$("#lbScreenList");
   if(!LB){el.innerHTML='<div class="lbMsg">Classement indisponible (pas de connexion ?).</div>';return;}
-  try{renderLeaderboard(await LB.top(10),null,"lbScreenList");}
+  try{renderBoard("lbScreenList",await LB.all());}
   catch(e){console.warn(e);el.innerHTML='<div class="lbMsg">Classement indisponible pour le moment.</div>';}
 }
 function openLbScreen(){
@@ -4279,9 +4308,15 @@ const db = getFirestore(app), col = collection(db, "classement"), cfgRef = doc(d
 // « Saison » courante : chaque réinitialisation crée une nouvelle saison ; seuls ses scores sont affichés.
 async function saison(){ const d = await getDoc(cfgRef); return d.exists() ? d.data().saison : "s0"; }
 window.TGVLeaderboard = {
-  async submit(nom, score, temps){
-    const ref = await addDoc(col, { nom: String(nom).slice(0, 20), score, temps, saison: await saison(), date: serverTimestamp() });
+  async submit(nom, site, siteKey, score, temps){
+    const ref = await addDoc(col, { nom: String(nom).slice(0, 20), site: String(site).slice(0, 40), siteKey: String(siteKey).slice(0, 40),
+      score, temps, saison: await saison(), date: serverTimestamp() });
     return ref.id;
+  },
+  // tous les scores de la saison (tri et filtres par site faits côté page)
+  async all(max = 1000){
+    const snap = await getDocs(query(col, where("saison", "==", await saison()), limit(max)));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   },
   async top(n = 10){
     const q = query(col, where("saison", "==", await saison()), orderBy("score", "desc"), orderBy("temps", "asc"), limit(n));

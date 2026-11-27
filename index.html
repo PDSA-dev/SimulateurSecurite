@@ -2131,9 +2131,8 @@ function buildDonneesProps(s){
       ['RE: Remboursement dossier DUPONT','Votre facture client n° 8841','Planning équipe semaine 49','RIB à mettre à jour — M. MARTIN','Compte rendu réunion sécurité']
         .forEach((t,i)=>{g.fillStyle=i%2?'#fff':'#e4ebf5';g.fillRect(w*0.21,h*(0.14+i*0.15),w*0.78,h*0.14);g.fillStyle='#1d2b40';g.fillText(t,w*0.23,h*(0.18+i*0.15));});
     })):null;
-    s.fix=()=>{ // écrans en veille : dalle noire avec un petit voyant
-      const t=canvasTex(256,150,(g,w,h)=>{g.fillStyle='#050608';g.fillRect(0,0,w,h);g.fillStyle='#e0a800';g.beginPath();g.arc(w-14,h-10,3,0,7);g.fill();});
-      [left,right].forEach(o=>{if(!o)return;o.mat.map=t;o.mat.needsUpdate=true;});};
+    s.fix=()=>{ // bonne réponse : la session est verrouillée (écran de verrouillage, comme le poste au post-it)
+      const t=TEX_LOCK();[left,right].forEach(o=>{if(!o)return;o.mat.map=t;o.mat.needsUpdate=true;});};
     return;
   }
   if(s.kind==='postit'){

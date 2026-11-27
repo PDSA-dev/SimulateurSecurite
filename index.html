@@ -723,18 +723,20 @@ function addMonitorPair(target,face){ // 2 écrans par bureau : modèle 3D si ch
   face=face||1;
   // écartement élargi (±0.85 au lieu de ±0.5) pour compenser le doublement de taille des écrans et éviter qu'ils se chevauchent
   const dx=MODEL_MONITOR?0.68:0.5;
+  const mons=[];
   [-dx,dx].forEach(mx=>{
     if(MODEL_MONITOR){
       const m=MODEL_MONITOR.clone(true);
       m.position.set(mx,1.55,0.46*face); // posé sur le bureau (y=1.55, plateau à 1.5 + 0.05 d'épaisseur)
       m.rotation.y=face>0?Math.PI:0;
-      target.add(m);
+      target.add(m);mons.push(m);
     } else {
       const arm=new THREE.Mesh(G.arm,M.arm);arm.position.set(mx,1.8,0.42*face);target.add(arm);
       const mon=new THREE.Mesh(G.mon,M.black);mon.position.set(mx,2.18,0.46*face);mon.rotation.y=face>0?Math.PI:0;target.add(mon);
-      const scr=new THREE.Mesh(G.scr,M.screen);scr.position.set(mx,2.18,(0.46-0.04)*face);scr.rotation.y=face>0?Math.PI:0;target.add(scr);
+      const scr=new THREE.Mesh(G.scr,M.screen);scr.position.set(mx,2.18,(0.46-0.04)*face);scr.rotation.y=face>0?Math.PI:0;target.add(scr);mons.push(scr);
     }
   });
+  return mons;
 }
 function addMouse(target,x,z,rotY){ // souris posée sur le bureau à côté du clavier ; ignoré si le modèle n'a pas chargé (pas de repli primitif)
   if(!MODEL_MOUSE) return;
@@ -1719,13 +1721,16 @@ function workstation(x,z,face,withPerson){
   // Le double écran est au bord AVANT (côté centre de l'îlot) -> écrans dos à dos entre les deux rangées.
   const g=new THREE.Group();
   addDesk(g);
-  addMonitorPair(g,face);
+  const mons=addMonitorPair(g,face);
   addKeyboard(g,0,0.05*face,face>0?Math.PI:0);
   addMouse(g,0.65,0.05*face,face>0?Math.PI:0);
   // chaise + personne côté EXTÉRIEUR de l'îlot
   const sz=-0.85*face;
   addChair(g,0,sz,face>0?0:Math.PI);
   g.position.set(x,0,z);scene.add(g);
+  // poste utilisé par la mission données : on garde une référence pour y poser les indices (écran, post-it, document)
+  const ds=DONNEES_SPOTS.find(s=>s.desk&&Math.abs(s.desk.x-x)<0.05&&Math.abs(s.desk.z-z)<0.05);
+  if(ds){ds.ws={group:g,monitors:mons,x,z,face};withPerson=false;} // poste laissé vide : le collègue s'est absenté
   if(withPerson){const p=person(face);addNPC(p,x,z+sz,0);}
 }
 function pod(cx,cz,cols,dx=3.95,skip=null){
@@ -2015,10 +2020,12 @@ function buildDAE(x,z,dir){
 // 3 zones sont fermées par un collider plein sur toute leur longueur, sans trou réel au niveau des portes
 // -qui ne sont que décoratives- donc inaccessibles). Les 3 points ci-dessous ont été vérifiés par un
 // flood-fill de collision depuis le point d'entrée du joueur : accessibles à pied depuis le plateau ouvert.
+// Chaque repère est posé dans l'allée, côté chaise, d'un VRAI poste (desk = position du poste dans pod()) :
+// l'indice est visible sur ce poste (écran / post-it / document) et disparaît quand le joueur l'a sécurisé.
 const DONNEES_SPOTS=[
-  {x:-9.5,z:-9, reason:"Écran resté déverrouillé, dossier client encore affiché."},
-  {x:8,   z:9,  reason:"Un mot de passe noté sur un post-it collé à l'écran."},
-  {x:-6.5,z:11, reason:"Un document client imprimé oublié sur le bureau."} // éloigné du hotspot « poste » (2,12) qui se superposait
+  {kind:'ecran',   desk:{x:-7.25, z:-8.08}, x:-7.25, z:-10.4, reason:"Écran resté déverrouillé, dossier client encore affiché.", fixed:"Session verrouillée."},
+  {kind:'postit',  desk:{x:9.975, z:7.58},  x:9.975, z:9.9,   reason:"Un mot de passe noté sur un post-it collé à l'écran.", fixed:"Post-it retiré."},
+  {kind:'document',desk:{x:-7.25, z:7.58},  x:-7.25, z:9.9,   reason:"Un document client imprimé oublié sur le bureau.", fixed:"Document rangé."}
 ];
 function buildDonneesSpots(){
   // même langage visuel que les hotspots de scénario (anneau au sol + faisceau + icône flottante) pour
@@ -2036,7 +2043,110 @@ function buildDonneesSpots(){
     // scène ne change jamais -> pas de recompilation des shaders (gel) quand on révèle/valide un poste
     const pl=new THREE.PointLight(0xff5555,0,5);pl.position.set(s.x,2.2,s.z);scene.add(pl);
     s.group=g;s.ring=ring;s.beam=beam;s.spr=spr;s.light=pl;
+    try{buildDonneesProps(s);}catch(e){console.warn('indices poste données',e);}
   });
+}
+// ---------- indices visuels posés sur les postes de la mission données ----------
+function canvasTex(w,h,draw){
+  const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);
+  const t=new THREE.CanvasTexture(c);t.anisotropy=4;return t;
+}
+function screenRect(mon){ // rectangle monde de la dalle d'un écran (modèle 3D : matériau « screen » ; repli : le plan lui-même)
+  mon.updateMatrixWorld(true);
+  let target=null;
+  mon.traverse(n=>{if(target||!n.isMesh)return;const ms=Array.isArray(n.material)?n.material:[n.material];if(ms.some(m=>m&&/screen/i.test(m.name||'')))target=n;});
+  const box=new THREE.Box3().setFromObject(target||mon);
+  return {box,size:box.getSize(new THREE.Vector3()),center:box.getCenter(new THREE.Vector3())};
+}
+function screenOverlay(mon,face,tex){ // plan affiché juste devant la dalle, tourné vers la chaise
+  const {box,size,center}=screenRect(mon);
+  const w=size.x*0.94,h=size.y*0.92;
+  const mat=new THREE.MeshBasicMaterial({map:tex,toneMapped:false});
+  const p=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);
+  p.position.set(center.x,center.y,face>0?box.min.z-0.012:box.max.z+0.012);
+  p.rotation.y=face>0?Math.PI:0;scene.add(p);
+  return {mesh:p,mat,w,h,box};
+}
+function drawUI(g,w,h,title){ // fenêtre type logiciel métier
+  g.fillStyle='#eef2f7';g.fillRect(0,0,w,h);
+  g.fillStyle='#1f3b70';g.fillRect(0,0,w,h*0.11);
+  g.fillStyle='#fff';g.font=`bold ${Math.round(h*0.06)}px Arial`;g.textBaseline='middle';g.fillText(title,w*0.03,h*0.055);
+  g.fillStyle='#d9e1ec';g.fillRect(0,h*0.11,w*0.2,h*0.89);
+}
+const TEX_LOCK=()=>canvasTex(512,300,(g,w,h)=>{ // écran de verrouillage (après sécurisation)
+  const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#0d2a5c');gr.addColorStop(1,'#1d5fa8');g.fillStyle=gr;g.fillRect(0,0,w,h);
+  g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';
+  g.font='bold 56px Arial';g.fillText('🔒',w/2,h*0.36);
+  g.font='bold 30px Arial';g.fillText('Session verrouillée',w/2,h*0.62);
+  g.font='20px Arial';g.fillStyle='#cfe0ff';g.fillText('Ctrl + Alt + Suppr pour se connecter',w/2,h*0.78);
+});
+function buildDonneesProps(s){
+  const ws=s.ws;if(!ws||!ws.monitors.length)return;
+  const face=ws.face;
+  const mons=ws.monitors.slice().sort((a,b)=>{const pa=new THREE.Vector3(),pb=new THREE.Vector3();a.getWorldPosition(pa);b.getWorldPosition(pb);return (pa.x-pb.x)*(face>0?-1:1);}); // gauche -> droite vu de la chaise
+  const parts=[];
+  if(s.kind==='ecran'){
+    const left=screenOverlay(mons[0],face,canvasTex(512,300,(g,w,h)=>{
+      drawUI(g,w,h,'GRC — Dossier client n° 2026-48153');
+      g.fillStyle='#1d2b40';g.font='bold 24px Arial';g.textBaseline='top';g.fillText('M. DUPONT Jean',w*0.24,h*0.16);
+      g.font='18px Arial';
+      ['Né le 12/03/1978','12 rue des Lilas, 34500 Béziers','Tél. 06 12 34 56 78','IBAN FR76 3000 •••• •••• 4521','Carte Liberté n° 29 0458 7712','Réclamation : retard TGV 6211']
+        .forEach((t,i)=>g.fillText(t,w*0.24,h*(0.29+i*0.105)));
+      g.fillStyle='#c62828';g.fillRect(w*0.74,h*0.16,w*0.23,h*0.09);g.fillStyle='#fff';g.font='bold 15px Arial';g.fillText('CONFIDENTIEL',w*0.755,h*0.18);
+    }));
+    const right=mons[1]?screenOverlay(mons[1],face,canvasTex(512,300,(g,w,h)=>{
+      drawUI(g,w,h,'Messagerie — Boîte de réception');
+      g.font='17px Arial';g.textBaseline='top';
+      ['RE: Remboursement dossier DUPONT','Votre facture client n° 8841','Planning équipe semaine 49','RIB à mettre à jour — M. MARTIN','Compte rendu réunion sécurité']
+        .forEach((t,i)=>{g.fillStyle=i%2?'#fff':'#e4ebf5';g.fillRect(w*0.21,h*(0.14+i*0.15),w*0.78,h*0.14);g.fillStyle='#1d2b40';g.fillText(t,w*0.23,h*(0.18+i*0.15));});
+    })):null;
+    s.fix=()=>{const t=TEX_LOCK();left.mat.map=t;left.mat.needsUpdate=true;if(right){right.mat.map=t;right.mat.needsUpdate=true;}};
+    return;
+  }
+  if(s.kind==='postit'){
+    const lock=screenOverlay(mons[0],face,TEX_LOCK()); // l'écran est bien verrouillé… mais le mot de passe est juste à côté
+    if(mons[1])screenOverlay(mons[1],face,TEX_LOCK());
+    const tex=canvasTex(256,256,(g,w,h)=>{
+      g.fillStyle='#ffe95c';g.fillRect(0,0,w,h);g.fillStyle='rgba(0,0,0,.06)';g.fillRect(0,0,w,h*0.16);
+      g.fillStyle='#1a237e';g.textAlign='center';g.textBaseline='middle';
+      g.font='italic bold 34px "Comic Sans MS", cursive';g.fillText('Session :',w/2,h*0.36);
+      g.font='bold 40px "Comic Sans MS", cursive';g.fillText('Tgv2026!',w/2,h*0.62);
+      g.font='italic 24px "Comic Sans MS", cursive';g.fillText('(ne pas oublier)',w/2,h*0.84);
+    });
+    const sz=Math.max(0.18,lock.h*0.5);
+    const p=new THREE.Mesh(new THREE.PlaneGeometry(sz,sz),new THREE.MeshStandardMaterial({map:tex,roughness:.85,side:THREE.DoubleSide}));
+    // collé en bas à droite de l'écran, débordant sur le cadre, légèrement de travers
+    const b=lock.box,dir=face>0?-1:1;
+    const xr=face>0?b.min.x+sz*0.35:b.max.x-sz*0.35;
+    p.position.set(xr,b.min.y+sz*0.3,(face>0?b.min.z:b.max.z)+dir*0.02);
+    p.rotation.set(0,face>0?Math.PI:0,0.12);scene.add(p);parts.push(p);
+    s.fix=()=>parts.forEach(o=>o.visible=false);
+    return;
+  }
+  if(s.kind==='document'){
+    mons.forEach(m=>screenOverlay(m,face,canvasTex(512,300,(g,w,h)=>{drawUI(g,w,h,'Intranet TGVCare');g.fillStyle='#8aa0bf';for(let i=0;i<5;i++)g.fillRect(w*0.24,h*(0.2+i*0.14),w*(0.4+0.1*(i%3)),h*0.05);})));
+    const tex=canvasTex(360,510,(g,w,h)=>{
+      g.fillStyle='#fdfdfb';g.fillRect(0,0,w,h);
+      g.fillStyle='#1f3b70';g.fillRect(0,0,w,46);g.fillStyle='#fff';g.font='bold 20px Arial';g.textBaseline='middle';g.fillText('SNCF Voyageurs — TGVCare',16,23);
+      g.fillStyle='#111';g.textBaseline='top';g.font='bold 22px Arial';g.fillText('Dossier réclamation client',16,62);
+      g.font='16px Arial';
+      ['Nom : DUPONT Jean','Adresse : 12 rue des Lilas','34500 Béziers','Tél. : 06 12 34 56 78','IBAN : FR76 3000 6000 0112','  3456 7890 189','Montant : 87,50 €','Motif : retard > 60 min']
+        .forEach((t,i)=>g.fillText(t,16,104+i*27));
+      g.fillStyle='#bbb';for(let i=0;i<4;i++)g.fillRect(16,330+i*22,w-32-(i%2)*60,8);
+      g.save();g.translate(w*0.62,h*0.86);g.rotate(-0.25);g.strokeStyle='#c62828';g.lineWidth=4;g.strokeRect(-95,-24,190,48);
+      g.fillStyle='#c62828';g.font='bold 26px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText('CONFIDENTIEL',0,0);g.restore();
+    });
+    const mat=new THREE.MeshStandardMaterial({map:tex,roughness:.9});
+    const geo=new THREE.PlaneGeometry(0.46,0.65);
+    // feuilles posées à plat sur le plateau (y≈1.555), côté chaise, à gauche du clavier
+    const sx=ws.x+(face>0?0.95:-0.95), szz=ws.z-0.22*face;
+    [[0,0,0.18],[0.05,0.03,-0.08]].forEach(([ox,oz,r],i)=>{
+      const m=new THREE.Mesh(geo,i===0?mat:new THREE.MeshStandardMaterial({color:0xf4f4f0,roughness:.9}));
+      m.rotation.x=-Math.PI/2;m.rotation.z=(face>0?Math.PI:0)+r;
+      m.position.set(sx+ox,1.556-i*0.002,szz+oz);m.receiveShadow=true;scene.add(m);parts.push(m);
+    });
+    s.fix=()=>parts.forEach(o=>o.visible=false);
+  }
 }
 function alarmTrigger(x,z){
   // Déclenchement d'alarme (boîtier rouge brise-glace), façade vers le plateau (-z)
@@ -3628,7 +3738,8 @@ function advanceDonnees(){
   const s=donneesMission.current;if(!s||s.found)return;
   s.found=true;if(s.group)s.group.visible=false;if(s.light)s.light.intensity=0;
   donneesMission.foundCount=(donneesMission.foundCount||0)+1;
-  toast("👀 "+s.reason,"warn",2600);
+  if(s.fix)try{s.fix();}catch(e){}
+  toast("👀 "+s.reason+(s.fixed?" ✅ "+s.fixed:""),"warn",3200);
   if(donneesMission.foundCount>=donneesMission.spots.length){
     $("#mission").style.display='none';$("#prompt").style.display='none';nearMission=false;
     setTimeout(()=>openDonneesFinalModal(),900); // laisse le temps de lire le dernier toast

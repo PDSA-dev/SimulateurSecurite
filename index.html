@@ -36,8 +36,8 @@
     animation:promptPulse 2.4s ease-in-out infinite}
   @keyframes promptPulse{0%,100%{box-shadow:0 10px 34px rgba(205,0,55,.4),inset 0 1px 0 rgba(255,255,255,.18)}50%{box-shadow:0 10px 44px rgba(205,0,55,.7),inset 0 1px 0 rgba(255,255,255,.18)}}
   #prompt .key{background:#fff;color:var(--carmillon);border-radius:7px;padding:2px 9px;font-weight:800}
-  #prompt .key.padA{background:#3fb950;color:#fff;border-radius:50%;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:inset 0 -2px 0 rgba(0,0,0,.25)}
-  #help kbd.padA{background:#3fb950;color:#fff;border-radius:50%;padding:1px 6px}
+  #prompt .key.padA{background:#e5484d;color:#fff;border-radius:50%;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:inset 0 -2px 0 rgba(0,0,0,.25)}
+  #help kbd.padA{background:#e5484d;color:#fff;border-radius:50%;padding:1px 6px}
 
   #mission{position:absolute;top:66px;left:50%;transform:translateX(-50%);background:rgba(217,72,15,.96);
     color:#fff;padding:10px 20px;border-radius:30px;font-size:14px;font-weight:700;display:none;text-align:center;
@@ -192,7 +192,7 @@
   <div id="mission"></div>
   <div id="carry">🧯 Extincteur en main</div>
   <canvas id="map" width="180" height="170"></canvas>
-  <div id="help"><span class="hKb"><kbd>Z Q S D</kbd> / flèches : se déplacer &nbsp;·&nbsp; <kbd>Souris</kbd> : regarder &nbsp;·&nbsp; <kbd>E</kbd> : interagir &nbsp;·&nbsp; <kbd>Échap</kbd> : pause / menu</span><span class="hPad" style="display:none"><kbd>Stick G</kbd> : se déplacer &nbsp;·&nbsp; <kbd>Stick D</kbd> : regarder &nbsp;·&nbsp; <kbd class="padA">A</kbd> : interagir &nbsp;·&nbsp; <kbd>Menu</kbd> : pause</span></div>
+  <div id="help"><span class="hKb"><kbd>Z Q S D</kbd> / flèches : se déplacer &nbsp;·&nbsp; <kbd>Souris</kbd> : regarder &nbsp;·&nbsp; <kbd>E</kbd> : interagir &nbsp;·&nbsp; <kbd>Échap</kbd> : pause / menu</span><span class="hPad" style="display:none"><kbd>Stick G</kbd> : se déplacer &nbsp;·&nbsp; <kbd>Stick D</kbd> : regarder &nbsp;·&nbsp; <kbd class="padA">B</kbd> : interagir &nbsp;·&nbsp; <kbd>Menu</kbd> : pause</span></div>
 </div>
 
 <div class="screen" id="themeSelect">
@@ -212,7 +212,7 @@
     <div class="head"><h1>🎧 TGVCare — Simulateur 3D Sécurité</h1><p>Open space · Centre de relation client SNCF</p></div>
     <div class="body center">
       <p>Tu arrives devant la porte d'accès, dehors. Avance jusqu'au lecteur à droite de la porte et <b>badge ton pass Carmillon (<span class="ikeyT">touche E</span>)</b> pour entrer.</p>
-      <p style="font-size:13px;opacity:.8">🎮 Manette : stick gauche = se déplacer / choisir une réponse · stick droit = regarder · A = interagir / valider · Start ou B = menu pause (reprendre, recommencer, réglages)</p>
+      <p style="font-size:13px;opacity:.8">🎮 Manette : stick gauche = se déplacer / choisir une réponse · stick droit = regarder · B = interagir / valider · Start ou A = menu pause (reprendre, recommencer, réglages)</p>
       <button class="btn" id="startBtn">▶ Avancer vers la porte d'entrée</button>
     </div>
   </div>
@@ -238,7 +238,7 @@
           <button data-nav data-act="settings">⚙ Réglages manette</button>
           <button data-nav data-act="quit">⏻ Quitter</button>
         </div>
-        <p class="pauseHint">🎮 Stick / croix : choisir · A : valider · B ou Start : reprendre<br>⌨ Échap : reprendre</p>
+        <p class="pauseHint">🎮 Stick / croix : choisir · B : valider · A ou Start : reprendre<br>⌨ Échap : reprendre</p>
       </div>
       <div class="pausePanel" data-panel="settings" hidden>
         <div class="setRow" data-nav data-set="look">
@@ -261,7 +261,7 @@
           <button class="setBtn" data-nav data-act="resetPad">↺ Réinitialiser les réglages</button>
           <button class="btn" data-nav data-act="back">◀ Retour</button>
         </div>
-        <p class="pauseHint">🎮 ↑ ↓ : choisir · ← → : régler · A : activer · B : retour</p>
+        <p class="pauseHint">🎮 ↑ ↓ : choisir · ← → : régler · B : activer · A : retour</p>
       </div>
     </div>
   </div>
@@ -783,8 +783,8 @@ function setUsingPad(v){
   document.querySelectorAll('.hPad').forEach(e=>e.style.display=v?'':'none');
   syncKeyLabels();
 }
-function syncKeyLabels(){document.querySelectorAll('.ikeyT').forEach(e=>{const t=e.dataset.s?(usingPad?'A':'E'):(usingPad?'bouton A':'touche E');if(e.textContent!==t)e.textContent=t;});}
-const INTERACT_KEY=()=>usingPad?'<span class="key padA">A</span>':'<span class="key">E</span>';
+function syncKeyLabels(){document.querySelectorAll('.ikeyT').forEach(e=>{const t=e.dataset.s?(usingPad?'B':'E'):(usingPad?'bouton B':'touche E');if(e.textContent!==t)e.textContent=t;});}
+const INTERACT_KEY=()=>usingPad?'<span class="key padA">B</span>':'<span class="key">E</span>';
 new MutationObserver(()=>{if(usingPad)syncKeyLabels();}).observe(document.body,{childList:true,subtree:true}); // textes de mission recréés dynamiquement
 addEventListener('keydown',()=>setUsingPad(false),true);
 addEventListener('mousedown',()=>setUsingPad(false),true);
@@ -4071,11 +4071,11 @@ renderPadSettings();refreshOptionLabels();
 
 /* ================================================================================================ */
 /*  Manette (Gamepad API) — Xbox / PlayStation / génériques (mapping "standard")                     */
-/*  En jeu : stick gauche / croix = déplacement · stick droit = regard · A = interagir (E)            */
-/*           Start ou B = menu pause (Reprendre / Recommencer / Thématiques / Réglages / Quitter)    */
+/*  En jeu : stick gauche / croix = déplacement · stick droit = regard · B = interagir (E)            */
+/*           Start ou A = menu pause (Reprendre / Recommencer / Thématiques / Réglages / Quitter)    */
 /*           Réglages (sensibilité, inversion Y, zone morte, déplacement progressif) : voir padCfg      */
 /*  Dans les fenêtres (thématiques, intro, scénarios, fin) : stick gauche / croix = choisir,          */
-/*           A = valider la réponse / le bouton sélectionné                                          */
+/*           B = valider la réponse / le bouton sélectionné                                          */
 /* ================================================================================================ */
 (function(){
   const st=document.createElement('style');
@@ -4086,7 +4086,7 @@ renderPadSettings();refreshOptionLabels();
   const toast=document.createElement('div');toast.id='padToast';document.body.appendChild(toast);
   let toastT=null;
   function showToast(t){toast.textContent=t;toast.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>toast.style.opacity=0,2500);}
-  addEventListener('gamepadconnected',e=>{const p=e.gamepad;if(p.mapping!=='standard'&&!(p.axes.length>=2&&p.buttons.length>=4))return;showToast('🎮 Manette connectée — A : valider · stick gauche : choisir / se déplacer');});
+  addEventListener('gamepadconnected',e=>{const p=e.gamepad;if(p.mapping!=='standard'&&!(p.axes.length>=2&&p.buttons.length>=4))return;showToast('🎮 Manette connectée — B : valider · stick gauche : choisir / se déplacer');});
   addEventListener('gamepaddisconnected',e=>{const p=e.gamepad;if(p.mapping!=='standard'&&!(p.axes.length>=2&&p.buttons.length>=4))return;showToast('🎮 Manette déconnectée');});
 
   const NAV_DZ=0.35; // seuil de navigation dans les fenêtres (fixe)
@@ -4124,7 +4124,8 @@ renderPadSettings();refreshOptionLabels();
     const edge=i=>{const p=btn(i),e=p&&!prev[i];prev[i]=p;return e;};
     const lx=ax[0]||0, ly=ax[1]||0, rx=ax[2]||0, ry=ax[3]||0;
     const up=ly<-NAV_DZ||btn(12), down=ly>NAV_DZ||btn(13), left=lx<-NAV_DZ||btn(14), right=lx>NAV_DZ||btn(15);
-    const aPressed=edge(0), bPressed=edge(1), startPressed=edge(9);
+    // B (rouge, bouton 1) = valider / interagir ; A (vert, bouton 0) = retour / pause
+    const aPressed=edge(1), bPressed=edge(0), startPressed=edge(9);
     if(g.buttons.some(b=>b&&b.pressed)||Math.abs(lx)>0.5||Math.abs(ly)>0.5||Math.abs(rx)>0.5||Math.abs(ry)>0.5)setUsingPad(true);
     const scr=topScreen();
     const dz=padCfg.dz;
